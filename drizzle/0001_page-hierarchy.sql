@@ -1,0 +1,1 @@
+ALTER TABLE `pages` ADD `parent_id` text REFERENCES pages(id);
