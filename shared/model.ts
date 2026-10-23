@@ -1,5 +1,6 @@
 export type ElementKind = 'rectangle' | 'ellipse' | 'text' | 'line' | 'button' | 'input' | 'select' | 'switch' | 'table' | 'tabs' | 'tree' | 'checkbox';
-export type Action = 'none' | 'modal' | 'toast' | 'toggle' | 'closeModal' | 'submit' | 'filter' | 'reset' | 'apply';
+export type Action = 'none' | 'modal' | 'toast' | 'toggle' | 'closeModal' | 'submit' | 'filter' | 'reset' | 'apply' | 'updateRow' | 'deleteRow';
+export interface TableRowAction { id: string; label: string; action: 'modal' | 'toast'; modalId?: string; message?: string }
 export interface Condition { sourceId: string; value: string }
 export interface ChoiceConfig { options: (SelectOption & { parentId?: string })[]; defaultValues: string[]; requiredAny?: string[] }
 export interface TableConfig {
@@ -8,6 +9,7 @@ export interface TableConfig {
   filters?: { sourceId: string; fields: string[]; mode: 'contains' | 'equals'; live: boolean; when?: Condition }[];
   columnControls?: { sourceId: string; when?: Condition }[];
   rowActionText?: string; rowMessage?: string;
+  rowActions?: TableRowAction[];
 }
 export interface SelectOption { id: string; label: string }
 export interface SelectConfig {
@@ -23,6 +25,7 @@ export interface PrototypeElement {
   parentId?: string; required?: boolean; inputType?: 'text' | 'email';
   select?: SelectConfig;
   choices?: ChoiceConfig; table?: TableConfig; visibleWhen?: Condition;
+  rowField?: string;
 }
 export interface PrototypeDialog { id: string; title: string; width: number; height: number; background: string }
 export interface PrototypeDocument { width: number; height: number; background: string; elements: PrototypeElement[]; dialogs?: PrototypeDialog[] }

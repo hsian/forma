@@ -41,3 +41,10 @@ export const assets = sqliteTable('assets', {
   size: integer('size').notNull(),
   createdAt: integer('created_at').notNull(),
 });
+export const aiMessages = sqliteTable('ai_messages', {
+  id: text('id').primaryKey(),
+  pageId: text('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+  role: text('role').$type<'user' | 'assistant'>().notNull(),
+  content: text('content').notNull(), status: text('status').notNull(), provider: text('provider').notNull().default(''),
+  createdAt: integer('created_at').notNull(),
+});

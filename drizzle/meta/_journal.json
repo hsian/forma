@@ -15,6 +15,13 @@
       "when": 1792730788384,
       "tag": "0001_page-hierarchy",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792739637034,
+      "tag": "0002_ai-messages",
+      "breakpoints": true
     }
   ]
 }

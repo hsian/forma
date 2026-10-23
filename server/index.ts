@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { openDatabase } from './db/index.js';
 import { createRepository } from './db/repository.js';
 import { registerApi } from './api.js';
+import { registerAi } from './ai/routes.js';
+import { existsSync } from 'node:fs';
+
+const envPath = fileURLToPath(new URL('../.env', import.meta.url));
+if (existsSync(envPath)) process.loadEnvFile(envPath);
 
 const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
 const database = openDatabase();
@@ -15,6 +20,7 @@ app.addHook('onRequest', async (request, reply) => {
   if (request.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store');
 });
 registerApi(app, repository);
+registerAi(app, database.db);
 if (process.argv.includes('--production')) {
   await app.register(fastifyStatic, { root: fileURLToPath(new URL('../dist', import.meta.url)) });
   app.get('/preview', async (_request, reply) => reply.sendFile('index.html'));

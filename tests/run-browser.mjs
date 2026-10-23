@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { createServer } from 'node:net';
 
 const scripts = process.argv.slice(2);
-const suites = scripts.length ? scripts : ['browser.mjs', 'dialog.browser.mjs', 'select.browser.mjs', 'persistence.browser.mjs', 'projects.browser.mjs', 'account-select.browser.mjs', 'pan.browser.mjs', 'project-preview.browser.mjs'];
+const suites = scripts.length ? scripts : ['browser.mjs', 'dialog.browser.mjs', 'select.browser.mjs', 'persistence.browser.mjs', 'projects.browser.mjs', 'account-select.browser.mjs', 'pan.browser.mjs', 'project-preview.browser.mjs', 'ai.browser.mjs', 'row-actions.browser.mjs'];
 await mkdir('test-results', { recursive: true });
 for (const suite of suites) {
   if (!/^[a-z.-]+\.mjs$/.test(suite)) throw Error('无效测试脚本名');
@@ -14,6 +14,7 @@ for (const suite of suites) {
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
   const env = { ...process.env, PORT: String(port), DATABASE_PATH: resolve(directory, 'qa.db'), TEST_URL: `http://127.0.0.1:${port}` };
+  if (suite === 'ai.browser.mjs') Object.assign(env, { FORMA_AI_PROVIDER: 'codex', FORMA_CODEX_CLI: resolve('tests/fixtures/fake-model.mjs') });
   const server = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts', '--production'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = '';
   server.stdout.on('data', chunk => { logs = (logs + chunk).slice(-12000); });

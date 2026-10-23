@@ -1,15 +1,22 @@
 import { useState } from 'react';
 import { Button, Checkbox, Input, InputNumber, Modal, Select } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { getSelectConfig, type Condition, type PrototypeElement, type TableConfig } from '../shared/model';
+import { getSelectConfig, type Condition, type PrototypeElement, type TableConfig, type PrototypeDialog, type TableRowAction } from '../shared/model';
+import { rowActions } from '../shared/runtime';
 
-type Props = { element: PrototypeElement; elements: PrototypeElement[]; patch: (id: string, patch: Partial<PrototypeElement>) => void };
+type Props = { element: PrototypeElement; elements: PrototypeElement[]; patch: (id: string, patch: Partial<PrototypeElement>) => void; dialogs?: PrototypeDialog[]; editDialog?: (id: string) => void; createRowDialog?: (actionId: string) => void };
+export function RowBindingProperties({ element: e, elements, patch }: Pick<Props, 'element' | 'elements' | 'patch'>) {
+  if (!e.parentId) return null;
+  const tables = elements.filter(item => item.table?.rowActions?.some(a => a.action === 'modal' && a.modalId === e.parentId));
+  const fields = [...new Set(tables.flatMap(item => [...item.table!.columns.map(c => c.key), ...item.table!.rows.flatMap(row => Object.keys(row))]))];
+  return <div className="component-properties"><strong>当前行数据</strong>{['input', 'select'].includes(e.kind) && <label className="stacked-label">绑定当前行字段<Select aria-label="绑定当前行字段" allowClear showSearch placeholder="不绑定" value={e.rowField} options={fields.map(key => ({ value: key, label: `${tables.flatMap(t => t.table!.columns).find(c => c.key === key)?.title || key} (${key})` }))} onChange={rowField => patch(e.id, { rowField })}/></label>}<p className="property-note">{'文字和弹窗标题可填写 {{row.字段名}}，例如 {{row.name}}。绑定字段的输入框、选择器会自动回填，确认时可更新模拟数据。选择器使用选项值，多选值以逗号分隔。'}</p></div>;
+}
 export function ConditionProperties({ value, elements, onChange }: { value?: Condition; elements: PrototypeElement[]; onChange: (value?: Condition) => void }) {
   const source = elements.find(e => e.id === value?.sourceId);
   const options = source?.choices?.options || (source?.kind === 'select' ? getSelectConfig(source).options : []);
   return <div className="condition-properties"><Select aria-label="条件来源" allowClear placeholder="始终" value={value?.sourceId} options={elements.filter(e => e.kind === 'tabs' || e.kind === 'select').map(e => ({ label: e.name, value: e.id }))} onChange={id => onChange(id ? { sourceId: id, value: '' } : undefined)}/>{value && <Select aria-label="条件选项" placeholder="选择值" value={value.value || undefined} options={options.map(o => ({ label: o.label, value: o.id }))} onChange={next => onChange({ ...value, value: next })}/>}</div>;
 }
-export function ComponentProperties({ element: e, elements, patch }: Props) {
+export function ComponentProperties({ element: e, elements, patch, dialogs = [], editDialog, createRowDialog }: Props) {
   const [dataOpen, setDataOpen] = useState(false);
   const update = (table: TableConfig) => patch(e.id, { table });
   const choices = e.choices;
@@ -24,11 +31,20 @@ export function ComponentProperties({ element: e, elements, patch }: Props) {
   const table = e.table;
   if (!table) return <div className="component-properties"><p className="property-note">此表格使用旧版成员示例。</p><Button size="small" onClick={() => update({ columns: [{ key: 'name', title: '名称', width: 200 }], rows: [{ name: '示例数据' }], pageSize: 5 })}>自定义表格</Button></div>;
   const dataFields = [...table.columns, ...[...new Set(table.rows.flatMap(row => Object.keys(row)))].filter(key => !table.columns.some(c => c.key === key)).map(key => ({ key, title: key }))];
+  const actions = rowActions(table);
+  const changeAction = (id: string, change: Partial<TableRowAction>) => update({ ...table, rowActions: actions.map(action => action.id === id ? { ...action, ...change } : action) });
   return <div className="component-properties"><strong>表格列</strong>{table.columns.map((column, index) => <div className="table-column-property" key={column.key}><div className="property-inline"><Input aria-label={`第 ${index + 1} 列标题`} value={column.title} onChange={event => update({ ...table, columns: table.columns.map(c => c.key === column.key ? { ...c, title: event.target.value } : c) })}/><Button size="small" aria-label={`删除第 ${index + 1} 列`} icon={<DeleteOutlined/>} onClick={() => update({ ...table, columns: table.columns.filter(c => c.key !== column.key) })}/></div><label className="stacked-label">显示条件<ConditionProperties value={column.visibleWhen} elements={elements} onChange={visibleWhen => update({ ...table, columns: table.columns.map(c => c.key === column.key ? { ...c, visibleWhen } : c) })}/></label></div>)}
     <Button block size="small" icon={<PlusOutlined/>} onClick={() => update({ ...table, columns: [...table.columns, { key: crypto.randomUUID(), title: '新列', width: 160 }] })}>添加列</Button>
     <label className="stacked-label">每页条数<InputNumber aria-label="每页条数" min={1} max={100} value={table.pageSize} onChange={pageSize => pageSize && update({ ...table, pageSize })}/></label>
     <Button block onClick={() => setDataOpen(true)}>编辑模拟数据（{table.rows.length} 条）</Button>
-    <label className="stacked-label">行操作文字<Input aria-label="行操作文字" value={table.rowActionText} onChange={event => update({ ...table, rowActionText: event.target.value })}/></label>
+    <strong>行操作按钮</strong>{actions.map((action, index) => <div className="table-column-property" key={action.id}>
+      <div className="property-inline"><Input aria-label={`行操作 ${index + 1} 文字`} value={action.label} onChange={event => changeAction(action.id, { label: event.target.value })}/><Button size="small" aria-label={`删除行操作 ${index + 1}`} icon={<DeleteOutlined/>} onClick={() => update({ ...table, rowActions: actions.filter(a => a.id !== action.id) })}/></div>
+      <label className="stacked-label">执行动作<Select aria-label={`行操作 ${index + 1} 动作`} value={action.action} options={[{ value: 'toast', label: '显示消息' }, { value: 'modal', label: '打开弹窗', disabled: !dialogs.length }]} onChange={value => changeAction(action.id, { action: value, ...(value === 'modal' ? { modalId: action.modalId || dialogs[0]?.id } : {}) })}/></label>
+      {action.action === 'modal' ? <><label className="stacked-label">目标弹窗<Select aria-label={`行操作 ${index + 1} 弹窗`} value={action.modalId} options={dialogs.map(d => ({ label: d.title, value: d.id }))} onChange={modalId => changeAction(action.id, { modalId })}/></label><Button block size="small" disabled={!action.modalId} onClick={() => action.modalId && editDialog?.(action.modalId)}>编辑行操作弹窗</Button></> : <label className="stacked-label">消息内容<Input aria-label={`行操作 ${index + 1} 消息`} value={action.message} onChange={event => changeAction(action.id, { message: event.target.value })}/></label>}
+      <Button block size="small" onClick={() => createRowDialog?.(action.id)}>新建并编辑弹窗</Button>
+    </div>)}
+    <Button block size="small" aria-label="添加行操作" icon={<PlusOutlined/>} onClick={() => update({ ...table, rowActions: [...actions, { id: crypto.randomUUID(), label: '操作', action: 'toast', message: '操作成功' }] })}>添加行操作</Button>
+    <p className="property-note">{'打开弹窗时自动传入当前行。消息中可用 {{row.字段名}} 引用数据。'}</p>
     <label className="stacked-label">行点击提示<Input value={table.rowMessage} onChange={event => update({ ...table, rowMessage: event.target.value })}/></label>
     <strong>筛选关联</strong>{table.filters?.map((filter, index) => <div className="table-column-property" key={index}><div className="property-inline"><Select aria-label={`筛选 ${index + 1} 来源`} value={filter.sourceId} options={elements.filter(o => ['input', 'select', 'tabs', 'tree'].includes(o.kind)).map(o => ({ label: o.name, value: o.id }))} onChange={sourceId => update({ ...table, filters: table.filters!.map((f, i) => i === index ? { ...f, sourceId } : f) })}/><Button size="small" icon={<DeleteOutlined/>} onClick={() => update({ ...table, filters: table.filters!.filter((_, i) => i !== index) })}/></div><Select aria-label={`筛选 ${index + 1} 字段`} mode="tags" value={filter.fields} options={table.columns.map(c => ({ label: c.title, value: c.key }))} onChange={fields => update({ ...table, filters: table.filters!.map((f, i) => i === index ? { ...f, fields } : f) })}/><Select aria-label={`筛选 ${index + 1} 匹配方式`} value={filter.mode} options={[{ value: 'contains', label: '包含关键词' }, { value: 'equals', label: '等于选项值' }]} onChange={mode => update({ ...table, filters: table.filters!.map((f, i) => i === index ? { ...f, mode } : f) })}/><Checkbox checked={filter.live} onChange={event => update({ ...table, filters: table.filters!.map((f, i) => i === index ? { ...f, live: event.target.checked } : f) })}>变化时立即筛选</Checkbox><ConditionProperties value={filter.when} elements={elements} onChange={when => update({ ...table, filters: table.filters!.map((f, i) => i === index ? { ...f, when } : f) })}/></div>)}
     <Button block size="small" onClick={() => update({ ...table, filters: [...(table.filters || []), { sourceId: elements.find(o => o.kind === 'input')?.id || e.id, fields: [table.columns[0]?.key || 'name'], mode: 'contains', live: true }] })}>添加筛选关联</Button>
