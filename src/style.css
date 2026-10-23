@@ -34,3 +34,12 @@
 .prototype-page-tree .ant-tree-iconEle svg{display:block}
 .prototype-page-tree .page-tree-title{height:34px}
 .prototype-page-tree .page-tree-title>button{display:inline-flex;align-items:center;justify-content:center}
+
+.topbar{height:56px;display:grid;grid-template-columns:minmax(140px,1fr) auto minmax(140px,1fr);gap:12px;padding:0 20px}
+.topbar>.canvas-tools{position:static;left:auto;right:auto;transform:none;justify-self:center}
+.topbar>.header-right{justify-self:end;gap:8px}
+.topbar .header-right .ant-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0}
+.topbar .header-right .save-state{display:inline-flex;align-items:center;justify-content:center;width:24px;height:32px;font-size:16px}
+.topbar .save-state.error,.topbar .save-state.conflict{color:#d68b36}
+.current-page-name{font-weight:400}
+@media(max-width:800px){.topbar{padding:0 12px;gap:8px;grid-template-columns:minmax(100px,1fr) auto minmax(100px,1fr)}.topbar .brand{gap:8px}.topbar .brand strong{font-size:20px}.topbar>.header-right{gap:4px}.topbar .canvas-tools{gap:2px}.topbar .tool-divider{margin:0 4px}}

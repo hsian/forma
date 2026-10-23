@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { openPreview } from './preview-helpers.mjs';
 // Set PLAYWRIGHT_MODULE_ROOT to a directory containing Playwright's package.json
 // when using a shared browser runtime instead of a local Playwright installation.
@@ -9,7 +10,7 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('请使用 npm run test:browser，避免修改工作数据库');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-let page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+let page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
 const editorPage = page;
 async function leavePreview() { await page.close(); page = editorPage; await page.bringToFront(); }
 const errors = [];
@@ -17,7 +18,7 @@ page.on('pageerror', error => errors.push(error.message));
 await mkdir('test-results', { recursive: true });
 try {
   await page.goto(process.env.TEST_URL);
-  await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.node').first().waitFor();
   const initialCount = await page.locator('.node').count();
   await page.screenshot({ path: 'test-results/editor.png', fullPage: true });

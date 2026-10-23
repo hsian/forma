@@ -7,6 +7,7 @@ import { createRepository } from './db/repository.js';
 import { registerApi } from './api.js';
 import { registerAi } from './ai/routes.js';
 import { existsSync } from 'node:fs';
+import { registerAuth } from './auth.js';
 
 const envPath = fileURLToPath(new URL('../.env', import.meta.url));
 if (existsSync(envPath)) process.loadEnvFile(envPath);
@@ -19,8 +20,9 @@ app.addHook('onClose', async () => { database.close(); });
 app.addHook('onRequest', async (request, reply) => {
   if (request.url.startsWith('/api/')) reply.header('Cache-Control', 'no-store');
 });
-registerApi(app, repository);
-registerAi(app, database.db);
+const auth = registerAuth(app, database.db);
+registerApi(app, repository, auth);
+registerAi(app, database.db, auth);
 if (process.argv.includes('--production')) {
   await app.register(fastifyStatic, { root: fileURLToPath(new URL('../dist', import.meta.url)) });
   app.get('/preview', async (_request, reply) => reply.sendFile('index.html'));
@@ -34,5 +36,5 @@ if (process.argv.includes('--production')) {
   });
   app.addHook('onClose', async () => { await vite.close(); });
 }
-await app.listen({ port: Number(process.env.PORT || 3000), host: '127.0.0.1' });
+await app.listen({ port: Number(process.env.PORT || 3000), host: process.env.HOST || '127.0.0.1' });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => { void app.close(); });

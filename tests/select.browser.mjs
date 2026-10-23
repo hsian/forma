@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { openPreview } from './preview-helpers.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -7,7 +8,7 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('请使用 npm run test:browser，避免修改工作数据库');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-let page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+let page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
 const editorPage = page;
 async function leavePreview() { await page.close(); page = editorPage; await page.bringToFront(); }
 const errors = [];
@@ -24,7 +25,7 @@ async function openSelect(select) {
 await mkdir('test-results', { recursive: true });
 try {
   await page.goto(process.env.TEST_URL);
-  await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.getByRole('button', { name: '元素', exact: true }).click();
   await page.getByPlaceholder('搜索元素', { exact: true }).fill('select');
   assert.equal(await page.locator('.element-card').count(), 1);

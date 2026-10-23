@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('必须使用隔离测试服务器');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const button = name => page.getByRole('button', { name, exact: true });
 const board = () => page.locator('.artboard');
@@ -20,7 +21,7 @@ function moved(before, after, dx, dy) {
 }
 try {
   await page.goto(process.env.TEST_URL);
-  await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
   await button('适应画布').click();
   const original = await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json();
   const view = await page.locator('.viewport').boundingBox();
@@ -54,6 +55,7 @@ try {
   // 平移后的选框和元素拖动仍然对应文档坐标。
   await button('平移工具（按住空格）').click(); await drag(view.x + 28, view.y + 28, 25, 20);
   await page.keyboard.press('v'); await query.click();
+  assert.equal((await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/lease`)).json()).lease.expiresAt, undefined, '平移、缩放和选中元素不占用编辑权');
   const box = await query.boundingBox(); const documentX = await query.evaluate(el => parseFloat(el.style.left));
   const scale = (await board().evaluate(el => el.getBoundingClientRect().width)) / original.document.width;
   await drag(box.x + box.width / 2, box.y + box.height / 2, 36, 24);

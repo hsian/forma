@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('必须使用隔离测试服务器');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const editor = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const editor = await authenticatedPage(browser, { viewport: { width: 1600, height: 1000 } });
 const errors = []; editor.on('pageerror', error => errors.push(error.message));
 const base = process.env.TEST_URL;
 let preview;
@@ -26,8 +27,8 @@ try {
   await api(`/api/projects/${other.project.id}/pages`, 'POST', { name: '不应出现在当前项目' });
   await api(`/api/pages/${child.id}/document`, 'PUT', { revision: 0, document: seed.document });
   await editor.addInitScript(id => localStorage.setItem('forma:last-page', id), child.id);
-  await editor.goto(base); await editor.getByText('本地服务已连接', { exact: true }).waitFor();
-  await editor.locator('.workspace-title strong').filter({ hasText: /^成员详情$/ }).waitFor();
+  await editor.goto(base); await editor.locator('.studio[data-server-state="ready"]').waitFor();
+  await editor.locator('.current-page-name').filter({ hasText: /^成员详情$/ }).waitFor();
   await editor.locator('.node[data-id="title"]').click();
   await editor.getByRole('textbox', { name: '文字内容', exact: true }).fill('立即预览应显示最新内容');
   preview = await openPreview(editor, errors);
@@ -36,7 +37,7 @@ try {
   assert.equal(new URL(preview.url()).searchParams.get('projectId'), 'default-project');
   assert.equal(new URL(preview.url()).searchParams.get('pageId'), child.id);
   assert.equal(await preview.locator('.preview-page').getByText('立即预览应显示最新内容', { exact: true }).count(), 1);
-  assert.ok((await editor.locator('.workspace-title strong').innerText()).includes('成员详情'));
+  assert.ok((await editor.locator('.current-page-name').innerText()).includes('成员详情'));
   assert.equal(await editor.locator('.node-selected[data-id="title"]').count(), 1);
   assert.equal(await preview.locator('.preview-page-tree .ant-tree-title').getByText('不应出现在当前项目', { exact: true }).count(), 0);
   assert.equal(await preview.locator('.preview-page-tree .ant-tree-node-selected').innerText(), '成员详情');

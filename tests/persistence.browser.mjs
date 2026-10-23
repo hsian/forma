@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('请使用 npm run test:browser，避免修改工作数据库');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 const base = process.env.TEST_URL;
@@ -25,7 +26,7 @@ async function waitSaved(target, text) {
 }
 try {
   await page.goto(base);
-  await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
   pageId = (await (await page.request.get(`${base}/api/bootstrap`)).json()).page.id;
   let holdFirstResponse = true;
   let simulateFailure = false;
@@ -61,7 +62,7 @@ try {
   await waitSaved(page, '请求期间继续编辑');
   assert.equal(writes, 2, 'in-flight edits must be saved by one serialized follow-up request');
   await page.reload();
-  await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
   assert.equal(await page.locator('.node[data-id="title"] .text-content').innerText(), '请求期间继续编辑');
   await editTitle(page, '手动立即保存');
   await page.getByRole('textbox', { name: '文字内容', exact: true }).press('Control+s');
@@ -73,6 +74,8 @@ try {
   await page.locator('[data-save-status="error"]').waitFor();
   assert.equal(titleOf(await readDocument()), titleOf(beforeFailure));
   assert.equal(await page.getByRole('textbox', { name: '文字内容', exact: true }).inputValue(), '失败后重试');
+  await page.clock.install(); await page.clock.fastForward(65000);
+  assert.equal(await page.evaluate(async () => (await (await fetch('/api/pages/default-page/lease')).json()).lease.owned), true, '未保存的修改不能因空闲而释放编辑权');
   await page.getByRole('button', { name: '重试保存', exact: true }).click();
   await waitSaved(page, '失败后重试');
 
@@ -84,21 +87,34 @@ try {
   await waitSaved(page, '网络确认恢复');
   assert.equal((await readDocument()).revision, beforeLostAck.revision + 1, 'lost acknowledgment retry must not write twice');
 
-  const second = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const second = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
   second.on('pageerror', error => errors.push(error.message));
   await second.goto(base);
-  await second.getByText('本地服务已连接', { exact: true }).waitFor();
+  await second.locator('.studio[data-server-state="ready"]').waitFor();
   await editTitle(page, '窗口一已保存');
   await waitSaved(page, '窗口一已保存');
+  await page.clock.fastForward(65000);
+  await page.waitForFunction(async () => !(await (await fetch('/api/pages/default-page/lease')).json()).lease.expiresAt);
+  await second.clock.install(); await second.clock.fastForward(20000);
+  await second.locator('.node[data-id="title"] .text-content').getByText('窗口一已保存', { exact: true }).waitFor();
+  await editTitle(second, '窗口二获得编辑权');
+  await waitSaved(second, '窗口二获得编辑权');
+  // Even a lease owner must still satisfy revision checks when its loaded version is stale.
+  const advanced = await readDocument();
+  const advance = await second.request.put(`${base}/api/pages/${pageId}/document`, { data: { revision: advanced.revision, document: advanced.document } });
+  assert.equal(advance.ok(), true);
   await editTitle(second, '窗口二未保存的修改');
   await second.locator('[data-save-status="conflict"]').waitFor();
-  assert.equal(titleOf(await readDocument()), '窗口一已保存');
+  assert.equal(titleOf(await readDocument()), '窗口二获得编辑权');
   assert.equal(await second.getByRole('textbox', { name: '文字内容', exact: true }).inputValue(), '窗口二未保存的修改');
   await second.getByRole('button', { name: '读取服务器版本', exact: true }).click();
   await second.getByRole('dialog').getByRole('button', { name: '重新载入', exact: true }).click();
   await second.locator('[data-save-status="saved"]').waitFor();
-  assert.equal(await second.locator('.node[data-id="title"] .text-content').innerText(), '窗口一已保存');
+  assert.equal(await second.locator('.node[data-id="title"] .text-content').innerText(), '窗口二获得编辑权');
   await second.close();
+  await page.waitForFunction(async () => !(await (await fetch('/api/pages/default-page/lease')).json()).lease.expiresAt);
+  await page.clock.fastForward(20000);
+  await page.locator('.node[data-id="title"] .text-content').getByText('窗口二获得编辑权', { exact: true }).waitFor();
   await page.setViewportSize({ width: 760, height: 1000 });
   simulateFailure = true;
   await editTitle(page, '窄屏保存验证');

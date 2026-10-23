@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
@@ -8,7 +9,7 @@ const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('必须使用隔离测试服务器');
 const fixture = JSON.parse(execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', "import {rowActionDocument} from './tests/fixtures/row-actions.ts';console.log(JSON.stringify(rowActionDocument()))"], { encoding: 'utf8' }));
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const editor = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
+const editor = await authenticatedPage(browser, { viewport: { width: 1600, height: 1100 } });
 const errors = []; editor.on('pageerror', error => errors.push(error.message));
 const base = process.env.TEST_URL;
 const read = async () => (await editor.request.get(`${base}/api/pages/default-page/document`)).json();
@@ -17,7 +18,7 @@ try {
   const existing = await read();
   const saved = await editor.request.put(`${base}/api/pages/default-page/document`, { data: { revision: existing.revision, document: fixture } });
   assert.equal(saved.ok(), true, await saved.text());
-  await editor.goto(base); await editor.getByText('本地服务已连接', { exact: true }).waitFor();
+  await editor.goto(base); await editor.locator('.studio[data-server-state="ready"]').waitFor();
   await editor.locator('.node[data-id="records"]').click();
   await editor.getByRole('textbox', { name: '行操作 1 文字', exact: true }).waitFor();
   assert.equal(await editor.getByRole('textbox', { name: /^行操作 \d+ 文字$/ }).count(), 3);
@@ -81,7 +82,7 @@ try {
   const modified = (await read()).document;
   const action = modified.elements.find(e => e.id === 'records').table.rowActions.at(-1);
   assert.equal(action.label, '审核'); assert.equal(modified.dialogs.find(d => d.id === action.modalId).title, '审核 {{row.name}}');
-  await editor.reload(); await editor.getByText('本地服务已连接', { exact: true }).waitFor();
+  await editor.reload(); await editor.locator('.studio[data-server-state="ready"]').waitFor();
   await editor.locator('.node[data-id="records"]').click();
   assert.equal(await editor.getByRole('textbox', { name: '行操作 4 文字', exact: true }).inputValue(), '审核');
   assert.deepEqual(errors, []);

@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('请使用 npm run test:browser，避免修改工作数据库');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 const base = process.env.TEST_URL;
@@ -17,7 +18,7 @@ async function enterName(value) {
   await nameDialog().waitFor({ state: 'hidden' });
 }
 async function current(name) {
-  await page.waitForFunction(name => document.querySelector('.workspace-title strong')?.textContent === name && !document.querySelector('.editor-layout').inert, name);
+  await page.waitForFunction(name => document.querySelector('.current-page-name')?.textContent === name && !document.querySelector('.editor-layout').inert, name);
 }
 async function pageMenu(name, action) {
   await button(`页面操作 ${name}`).click();
@@ -38,7 +39,7 @@ async function selectedId() { return page.evaluate(() => localStorage.getItem('f
 async function projectPages(id) { return (await (await page.request.get(`${base}/api/projects/${id}/pages`)).json()).pages; }
 try {
   await page.goto(base);
-  await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.page-tree-title>span').filter({ hasText: /^用户管理$/ }).waitFor();
   const initial = await (await page.request.get(`${base}/api/bootstrap`)).json();
   await button('新建页面').click();
@@ -88,7 +89,7 @@ try {
   assert.ok((await page.locator('.node').innerText()).includes('另一个项目'));
   await button('项目操作').click(); await page.getByRole('menuitem', { name: '重命名项目', exact: true }).click();
   await enterName('业务后台二');
-  await page.reload(); await page.getByText('本地服务已连接', { exact: true }).waitFor(); await current('首页');
+  await page.reload(); await page.locator('.studio[data-server-state="ready"]').waitFor(); await current('首页');
   assert.equal(await selectedId(), homeId);
   assert.equal(await page.locator('.project-switcher .ant-select-selection-item').innerText(), '业务后台二');
   assert.ok((await page.locator('.node').innerText()).includes('另一个项目'));

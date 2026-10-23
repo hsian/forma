@@ -66,7 +66,7 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     finally { busyRef.current = false; setBusy(false); onBusyChange(false); }
   }
   async function openPage(id: string) { if (!await session.switchPage(id)) throw Error('页面未能切换，请先确认当前修改已经保存'); }
-  function requestName(request: NameRequest, value = '') { setNameRequest(request); setNameValue(value); }
+  function requestName(request: NameRequest, value = '') { if (request.kind !== 'new-project' && session.projectRole === 'viewer') return; if (request.kind === 'rename-project' && session.projectRole !== 'admin') return; setNameRequest(request); setNameValue(value); }
   async function submitName() {
     const value = nameValue.trim();
     if (!value || !nameRequest) { void message.warning('请输入名称'); return; }
@@ -145,7 +145,7 @@ function ProjectSwitcher() {
   const disabled = busy || session.server !== 'ready';
   return <div className="project-switcher"><Select aria-label="当前项目" variant="borderless" showSearch optionFilterProp="label" disabled={disabled} value={session.currentProjectId || undefined} placeholder={session.projectName}
     options={projects.length ? projects.map(project => ({ value: project.id, label: project.name })) : session.currentProjectId ? [{ value: session.currentProjectId, label: session.projectName }] : []} onChange={selectProject}/>
-    <Dropdown trigger={['click']} menu={{ items: [{ key: 'rename', label: '重命名项目' }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
+    <Dropdown trigger={['click']} menu={{ items: [{ key: 'rename', label: '重命名项目', disabled: session.projectRole !== 'admin' }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || session.projectRole !== 'admin' }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
     <button aria-label="新建项目" title="新建项目" disabled={disabled} onClick={() => name({ kind: 'new-project' })}><PlusOutlined/></button>
   </div>;
 }
@@ -163,10 +163,10 @@ export function PageTree() {
     return pages.filter(page => page.parentId === parentId).map(page => ({ key: page.id, icon: <FileOutlined/>, title: <span className="page-tree-title"><span title={page.name}>{page.name}</span><Dropdown trigger={['click']} menu={{ items: [
       { key: 'child', label: '新建子页面' }, { key: 'rename', label: '重命名页面' }, { key: 'duplicate', label: '复制此页' }, { key: 'move', label: '移动页面' },
       { type: 'divider' }, { key: 'up', label: '上移' }, { key: 'down', label: '下移' }, { type: 'divider' }, { key: 'delete', label: '删除页面', danger: true },
-    ], onClick: info => { info.domEvent.stopPropagation(); pageAction(info.key, page); } }}><button aria-label={`页面操作 ${page.name}`} disabled={busy} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><MoreOutlined/></button></Dropdown></span>, children: nodes(page.id) }));
+    ], onClick: info => { info.domEvent.stopPropagation(); pageAction(info.key, page); } }}><button aria-label={`页面操作 ${page.name}`} disabled={busy || session.projectRole === 'viewer'} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><MoreOutlined/></button></Dropdown></span>, children: nodes(page.id) }));
   }
-  return <div className="page-manager"><div className="page-project-controls"><ProjectSwitcher/></div><div className="page-manager-heading"><span>项目页面 <span>{pages.length}</span></span><div><button aria-label="刷新页面列表" title="刷新页面列表" disabled={busy} onClick={refresh}><ReloadOutlined/></button><button aria-label="新建根页面" title="新建页面" disabled={busy} onClick={() => name({ kind: 'new-page' })}><PlusOutlined/></button></div></div>
+  return <div className="page-manager"><div className="page-project-controls"><ProjectSwitcher/></div><div className="page-manager-heading"><span>项目页面 <span>{pages.length}</span></span><div><button aria-label="刷新页面列表" title="刷新页面列表" disabled={busy} onClick={refresh}><ReloadOutlined/></button><button aria-label="新建根页面" title="新建页面" disabled={busy || session.projectRole === 'viewer'} onClick={() => name({ kind: 'new-page' })}><PlusOutlined/></button></div></div>
     <Spin spinning={busy}><Tree className="prototype-page-tree" blockNode showIcon showLine={{ showLeafIcon: false }} disabled={busy} treeData={nodes(null)} selectedKeys={[session.currentPageId]} expandedKeys={expanded} onExpand={keys => setExpanded(keys)} onSelect={keys => { if (keys[0] && keys[0] !== session.currentPageId) selectPage(String(keys[0])); }}/></Spin>
-    <p className="page-tree-help">点击页面名称切换画布。<br/>通过右侧「···」管理子页面。</p><Button aria-label="新建页面" block size="small" icon={<PlusOutlined/>} disabled={busy} onClick={() => name({ kind: 'new-page' })}>新建页面</Button>
+    <p className="page-tree-help">点击页面名称切换画布。<br/>通过右侧「···」管理子页面。</p><Button aria-label="新建页面" block size="small" icon={<PlusOutlined/>} disabled={busy || session.projectRole === 'viewer'} onClick={() => name({ kind: 'new-page' })}>新建页面</Button>
   </div>;
 }

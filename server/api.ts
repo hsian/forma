@@ -2,11 +2,20 @@ import type { FastifyInstance } from 'fastify';
 import { createRepository, ManagementError } from './db/repository.js';
 import { saveDocumentSchema } from './document-validation.js';
 import { z } from 'zod';
+import type { AuthService } from './auth.js';
 
-export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>) {
+export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService) {
   app.get('/api/health', async () => ({ status: 'ok', storage: 'sqlite', app: 'Forma' }));
-  app.get<{ Querystring: { pageId?: string } }>('/api/bootstrap', async request => repository.bootstrap(request.query.pageId));
-  app.get('/api/projects', async () => ({ projects: repository.listProjects() }));
+  app.get<{ Querystring: { pageId?: string } }>('/api/bootstrap', async (request, reply) => {
+    if (!auth) return repository.bootstrap(request.query.pageId);
+    const user = request.identity!.user;
+    const allowed = auth.allowedProjects(user);
+    const available = allowed.flatMap(project => repository.listPages(project.id));
+    const page = available.find(page => page.id === request.query.pageId) || available[0];
+    if (!page) return reply.code(404).send({ message: '暂无可访问的项目，请创建项目或联系管理员' });
+    return { ...repository.bootstrap(page.id), projectRole: auth.role(user, page.projectId) };
+  });
+  app.get('/api/projects', async request => ({ projects: auth ? auth.allowedProjects(request.identity!.user) : repository.listProjects() }));
   app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/pages', async request => ({ pages: repository.listPages(request.params.projectId) }));
   const name = z.string().trim().min(1).max(120);
   const manage = <T>(operation: () => T, reply: import('fastify').FastifyReply) => {
@@ -18,7 +27,7 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
   app.post('/api/projects', async (request, reply) => {
     const parsed = z.object({ name }).safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ message: '请输入 1–120 字的项目名称' });
-    return manage(() => repository.createProject(parsed.data.name), reply);
+    return manage(() => auth ? auth.createProject(() => repository.createProject(parsed.data.name), request.identity!.user) : repository.createProject(parsed.data.name), reply);
   });
   app.patch<{ Params: { projectId: string } }>('/api/projects/:projectId', async (request, reply) => {
     const parsed = z.object({ name }).safeParse(request.body);

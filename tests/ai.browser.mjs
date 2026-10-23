@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('必须使用隔离测试服务器');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const button = name => page.getByRole('button', { name, exact: true });
 const input = () => page.getByRole('textbox', { name: 'AI 修改要求', exact: true });
@@ -14,7 +15,9 @@ const document = async () => (await (await page.request.get(`${process.env.TEST_
 async function send(text) { await input().fill(text); await button('发送 AI 修改要求').click(); }
 async function finished() { await button('发送 AI 修改要求').waitFor(); }
 try {
-  await page.goto(process.env.TEST_URL); await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.goto(process.env.TEST_URL); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  assert.equal(await page.locator('.ai-panel').isVisible(), false, '默认收起，避免遮挡画布');
+  await button('显示 AI 聊天窗口').focus(); await button('显示 AI 聊天窗口').press('Space');
   await page.locator('.ai-panel').waitFor();
   await page.waitForFunction(() => !document.querySelector('.ai-panel button[aria-label="发送 AI 修改要求"]').disabled || !!document.querySelector('.ai-welcome'));
   const original = await document();
@@ -28,6 +31,19 @@ try {
   await input().fill('尚未发送的想法'); await button('展开 AI 对话记录').click();
   assert.equal(await page.locator('.ai-history').isVisible(), true);
   assert.equal((await page.locator('.viewport').boundingBox()).height, viewport.height);
+  await button('隐藏 AI 聊天窗口').click();
+  assert.equal(await page.locator('.ai-panel').isVisible(), false);
+  assert.equal((await page.locator('.viewport').boundingBox()).height, viewport.height);
+  await page.screenshot({ path: 'test-results/ai-launcher-collapsed.png', fullPage: true });
+  await button('显示 AI 聊天窗口').click();
+  assert.equal(await page.locator('.ai-history').isVisible(), true, '隐藏后重新打开保留记录展开状态');
+  assert.equal(await input().inputValue(), '尚未发送的想法');
+  await button('隐藏 AI 聊天窗口').click();
+  await page.reload(); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  assert.equal(await page.locator('.ai-panel').isVisible(), false, '刷新后记住收起状态');
+  await button('显示 AI 聊天窗口').click();
+  assert.equal(await input().inputValue(), '尚未发送的想法');
+  await button('展开 AI 对话记录').click();
   await button('收起 AI 对话记录').click(); assert.equal(await input().inputValue(), '尚未发送的想法');
   await query().click();
   await send('自动修正测试：把按钮改成蓝色'); await finished();
@@ -54,7 +70,10 @@ try {
   assert.deepEqual(await document(), original);
   await send('延迟修改按钮颜色');
   await button('停止 AI 生成').waitFor();
+  await button('隐藏 AI 聊天窗口').click();
   await page.getByRole('textbox', { name: '文字内容', exact: true }).fill('手工修改应保留');
+  await page.locator('.ai-panel button[aria-label="发送 AI 修改要求"]').waitFor({ state: 'attached' });
+  await button('显示 AI 聊天窗口').click();
   await finished();
   await page.getByRole('alert').filter({ hasText: '生成期间页面已' }).waitFor();
   await page.locator('[data-save-status="saved"]').waitFor();
@@ -72,9 +91,13 @@ try {
   await button('收起 AI 对话记录').click();
   await send('停止测试');
   await page.locator('.ai-inline-notice').filter({ hasText: '正在由 Codex 处理' }).waitFor();
+  await page.clock.install(); await page.clock.fastForward(65000);
+  assert.equal(await page.evaluate(async () => (await (await fetch('/api/pages/default-page/lease')).json()).lease.owned), true, 'AI 生成期间保持编辑权');
   await button('停止 AI 生成').click(); await finished();
   await page.getByRole('alert').filter({ hasText: '已停止' }).waitFor();
-  await page.reload(); await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.clock.fastForward(65000);
+  await page.waitForFunction(async () => !(await (await fetch('/api/pages/default-page/lease')).json()).lease.expiresAt);
+  await page.reload(); await page.locator('.studio[data-server-state="ready"]').waitFor();
   await button('展开 AI 对话记录').click();
   await page.getByText('可以调整按钮颜色，目前没有修改页面。', { exact: true }).waitFor();
   assert.equal((await document()).elements.find(e => e.id === 'query').fill, original.elements.find(e => e.id === 'query').fill);
@@ -85,7 +108,7 @@ try {
   const created = await (await page.request.post(`${process.env.TEST_URL}/api/projects/default-project/pages`, { data: { name: '另一页' } })).json();
   await button('刷新页面列表').click();
   await page.locator('.page-tree-title>span').getByText('另一页', { exact: true }).click();
-  await page.locator('.workspace-title strong').getByText('另一页', { exact: true }).waitFor();
+  await page.locator('.current-page-name').getByText('另一页', { exact: true }).waitFor();
   assert.equal(await page.locator('.ai-message').count(), 0);
   assert.equal((await (await page.request.get(`${process.env.TEST_URL}/api/pages/${created.id}/ai/messages`)).json()).messages.length, 0);
   assert.deepEqual(errors, []);

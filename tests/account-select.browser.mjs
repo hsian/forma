@@ -1,3 +1,4 @@
+import { authenticatedPage } from './browser-auth.mjs';
 import { openPreview } from './preview-helpers.mjs';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -6,9 +7,10 @@ import assert from 'node:assert/strict';
 const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(process.env.PLAYWRIGHT_MODULE_ROOT, 'package.json') : import.meta.url);
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('必须使用隔离测试服务器');
-const result = JSON.parse(execFileSync(process.execPath, ['--import', 'tsx', 'scripts/add-account-select.ts', 'default-project'], { encoding: 'utf8', env: process.env }));
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-let page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+let page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
+const cookie = (await page.context().cookies(process.env.TEST_URL)).map(item => `${item.name}=${item.value}`).join('; ');
+const result = JSON.parse(execFileSync(process.execPath, ['--import', 'tsx', 'scripts/add-account-select.ts', 'default-project'], { encoding: 'utf8', env: { ...process.env, FORMA_SESSION_COOKIE: cookie } }));
 const editorPage = page;
 async function leavePreview() { await page.close(); page = editorPage; await page.bringToFront(); }
 const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -21,9 +23,9 @@ async function total(value) { if (value) await table().getByText(`共 ${value} �
 async function openView() { await button('☷ 自定义视图').click(); await dialog().waitFor(); }
 try {
   await page.goto(process.env.TEST_URL);
-  await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.page-tree-title>span').filter({ hasText: /^账套选择$/ }).click();
-  await page.locator('.workspace-title strong').filter({ hasText: /^账套选择$/ }).waitFor();
+  await page.locator('.current-page-name').filter({ hasText: /^账套选择$/ }).waitFor();
   await page.screenshot({ path: 'test-results/account-select-editor.png', fullPage: true });
   assert.equal(await page.locator('.node[data-id="account-tabs"]').count(), 1);
   page = await openPreview(editorPage, errors);
@@ -72,7 +74,7 @@ try {
   await dialog().waitFor({ state: 'hidden' });
   await page.keyboard.press('Control+s');
   await page.locator('[data-save-status="saved"]').waitFor();
-  await page.reload(); await page.getByText('本地服务已连接', { exact: true }).waitFor();
+  await page.reload(); await page.locator('.studio[data-server-state="ready"]').waitFor();
   page = await openPreview(editorPage, errors);
   assert.equal(await table().getByRole('columnheader', { name: '账套名称（编辑）', exact: true }).count(), 1);
   assert.ok((await table().innerText()).includes('测试账套'));

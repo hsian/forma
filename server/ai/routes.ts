@@ -8,6 +8,7 @@ import { canonicalDocument, type AiEvent, type AiMessage } from '../../shared/ai
 import { aiPropertySchemas } from './operations.js';
 import { generateValidated } from './validated-generation.js';
 import { friendlyError, resolveCli } from './provider.js';
+import type { AuthService } from '../auth.js';
 
 const system = `你是 Forma 原型编辑助手，使用中文。只根据提供的原型 JSON 和用户需求回答或修改当前页面，不读写文件、不调用工具、不执行命令。
 讨论和解释返回 reply，operations=[]；用户明确要求修改且目标明确时直接返回修改操作，不机械要求确认。确实缺少业务决定时在 reply 问清楚，operations=[]。
@@ -26,7 +27,7 @@ type=updatePage: targetId="",kind=""，properties 仅含 width,height,background
 表格列与复选框联动时选项id必须等于列key。删除元素要在同一批操作修复所有引用。不生成 JS、HTML、函数或未支持的组件。
 按指定结构返回 reply 和 operations。reply 简短说明修改效果，不能在尚未应用时声称已经保存。`;
 
-export function registerAi(app: FastifyInstance, db: AppDatabase) {
+export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthService) {
   const active = new Map<string, AbortController>();
   db.update(aiMessages).set({ status: 'error', content: '上次处理因服务重启中断，未自动应用。' }).where(eq(aiMessages.status, 'running')).run();
   const history = (pageId: string) => db.select().from(aiMessages).where(eq(aiMessages.pageId, pageId)).orderBy(desc(aiMessages.createdAt)).limit(80).all().reverse();
@@ -71,6 +72,7 @@ export function registerAi(app: FastifyInstance, db: AppDatabase) {
         send({ type: 'text', text: '', reset: true });
       });
       if (controller.signal.aborted) throw Error('已停止，本轮没有修改原型。');
+      if (auth && (!auth.checkLease(request, pageId) || !['admin', 'editor'].includes(auth.role(request.identity!.user, page.projectId) || ''))) throw Error('页面编辑权或项目权限已变化，本轮没有应用。');
       const latest = db.select().from(documents).where(eq(documents.pageId, pageId)).get();
       if (!latest || canonicalDocument(latest.content) !== canonicalDocument(doc.content)) throw Error('生成期间页面已被更新或删除，本轮没有应用，请重新发送。');
       const message: AiMessage = { id: messageId, role: 'assistant', content: value.reply, status: 'done', provider: generated.provider, createdAt: now + 1 };

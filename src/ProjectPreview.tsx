@@ -41,13 +41,12 @@ export default function ProjectPreview() {
     const controller = new AbortController();
     setMetadata(null); setLoaded(null); setLoading(true); setError(''); setExpanded([]);
     if (!route.projectId) { setError('预览地址缺少项目，请从编辑器打开预览。'); setLoading(false); return () => controller.abort(); }
-    void Promise.all([
-      get<{ projects: ProjectInfo[] }>('/api/projects', controller.signal),
-      get<{ pages: PageInfo[] }>(`/api/projects/${encodeURIComponent(route.projectId)}/pages`, controller.signal),
-    ]).then(([projects, pages]) => {
+    void get<{ projects: ProjectInfo[] }>('/api/projects', controller.signal).then(async projects => {
       if (controller.signal.aborted) return;
       const project = projects.projects.find(item => item.id === route.projectId);
       if (!project) throw Error('项目不存在或已被删除');
+      const pages = await get<{ pages: PageInfo[] }>(`/api/projects/${encodeURIComponent(route.projectId)}/pages`, controller.signal);
+      if (controller.signal.aborted) return;
       setMetadata({ project, pages: pages.pages });
       setExpanded(pages.pages.filter(page => pages.pages.some(child => child.parentId === page.id)).map(page => page.id));
       if (!pages.pages.length) setLoading(false);
