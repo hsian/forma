@@ -1,3 +1,4 @@
+import { openPreview } from './preview-helpers.mjs';
 // Set PLAYWRIGHT_MODULE_ROOT to a directory containing Playwright's package.json
 // when using a shared browser runtime instead of a local Playwright installation.
 import { createRequire } from 'node:module';
@@ -8,7 +9,9 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('请使用 npm run test:browser，避免修改工作数据库');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+let page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+const editorPage = page;
+async function leavePreview() { await page.close(); page = editorPage; await page.bringToFront(); }
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await mkdir('test-results', { recursive: true });
@@ -59,7 +62,7 @@ try {
   await page.locator('.node[data-id="query"]').click();
   await page.getByRole('button', { name: '交互', exact: true }).click();
   await page.getByRole('textbox', { name: '交互内容', exact: true }).fill('已完成测试查询');
-  await page.getByRole('button', { name: '预览原型', exact: true }).click();
+  page = await openPreview(editorPage, errors);
   await page.getByRole('textbox', { name: '姓名搜索', exact: true }).fill('林晓');
   await page.getByRole('button', { name: '查询', exact: true }).click();
   await page.getByText('已完成测试查询', { exact: true }).waitFor();
@@ -72,7 +75,7 @@ try {
   await page.getByRole('button', { name: '确定', exact: true }).click();
   await page.getByText('提交成功（原型演示，未写入表格）', { exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/preview.png', fullPage: true });
-  await page.getByRole('button', { name: '返回编辑', exact: true }).click();
+  await leavePreview();
   await page.getByRole('button', { name: /图层/ }).click();
   await page.getByRole('button', { name: '隐藏页脚说明', exact: true }).click();
   assert.equal(await page.locator('.node[data-id="footer"]').count(), 0);
@@ -99,13 +102,14 @@ try {
   await page.locator('.ant-select').filter({ has: page.getByRole('combobox', { name: '点击执行动作', exact: true }) }).click();
   await page.getByText('切换元素显示 / 隐藏', { exact: true }).click();
   await page.locator('.ant-select').filter({ has: page.getByRole('combobox', { name: '交互目标元素', exact: true }) }).click();
+  await page.locator('.ant-select-dropdown:visible .rc-virtual-list-holder').last().evaluate(el => { el.scrollTop = 0; });
   await page.locator('.ant-select-item-option').filter({ hasText: '页面标题' }).click();
-  await page.getByRole('button', { name: '预览原型', exact: true }).click();
+  page = await openPreview(editorPage, errors);
   assert.equal(await page.locator('.preview-page').getByText('用户管理', { exact: true }).count(), 1);
   // The ellipse is the last inserted preview element.
   await page.locator('.preview-page > div').last().click();
   assert.equal(await page.locator('.preview-page').getByText('用户管理', { exact: true }).count(), 0);
-  await page.getByRole('button', { name: '返回编辑', exact: true }).click();
+  await leavePreview();
   assert.deepEqual(errors, [], 'browser must not produce uncaught errors');
   console.log('PASS: add, properties, undo/redo, scaled drag/resize, duplicate/delete, interactions, form validation, layers, multi-select alignment, visibility toggle.');
 } catch (error) {

@@ -1,3 +1,4 @@
+import { openPreview } from './preview-helpers.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -6,7 +7,9 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('请使用 npm run test:browser，避免修改工作数据库');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+let page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const editorPage = page;
+async function leavePreview() { await page.close(); page = editorPage; await page.bringToFront(); }
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 const button = name => page.getByRole('button', { name, exact: true });
@@ -58,15 +61,15 @@ try {
   await page.getByRole('switch', { name: '禁用控件', exact: true }).click();
   await page.locator('.ant-select-dropdown:visible').waitFor({ state: 'hidden' });
   await page.screenshot({ path: 'test-results/select-properties.png', fullPage: true });
-  await button('预览原型').click();
+  page = await openPreview(editorPage, errors);
   assert.ok(await page.getByRole('combobox', { name: '业务分类', exact: true }).isDisabled());
   await page.waitForFunction(() => document.querySelectorAll('.preview-page .ant-select-multiple .ant-select-selection-overflow-item:not([aria-hidden="true"]) > .ant-select-selection-item').length === 3);
   assert.equal(await page.locator('.preview-page .ant-select-multiple .ant-select-selection-overflow-item:not([aria-hidden="true"]) > .ant-select-selection-item').count(), 3);
   assert.equal(await page.locator('.preview-page .ant-select-multiple .ant-select-clear').count(), 0);
-  await button('返回编辑').click();
+  await leavePreview();
   await page.getByRole('switch', { name: '禁用控件', exact: true }).click();
   await page.getByRole('switch', { name: '允许清空', exact: true }).click();
-  await button('预览原型').click();
+  page = await openPreview(editorPage, errors);
   const runtimeSelect = page.locator('.preview-page .ant-select').filter({ has: page.getByRole('combobox', { name: '业务分类', exact: true }) });
   await runtimeSelect.hover();
   await runtimeSelect.locator('.ant-select-clear').click();
@@ -85,9 +88,9 @@ try {
   assert.deepEqual(await roleOptions.locator('.ant-select-item-option-content').allTextContents(), ['管理员', '编辑者', '访客']);
   await page.getByRole('combobox', { name: '角色', exact: true }).press('Escape');
   await button('取消').click();
-  await button('返回编辑').click();
+  await leavePreview();
   await page.getByRole('switch', { name: '多选模式', exact: true }).click();
-  await button('预览原型').click();
+  page = await openPreview(editorPage, errors);
   assert.equal(await page.locator('.preview-page .ant-select-multiple').count(), 0);
   const single = page.locator('.preview-page .ant-select').filter({ has: page.getByRole('combobox', { name: '业务分类', exact: true }) });
   assert.equal((await single.locator('.ant-select-selection-item').innerText()).trim(), '研发');

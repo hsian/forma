@@ -1,3 +1,4 @@
+import { openPreview } from './preview-helpers.mjs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -6,7 +7,10 @@ const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(proce
 const { chromium } = require('playwright');
 if (!process.env.TEST_URL) throw Error('请使用 npm run test:browser，避免修改工作数据库');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+let page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const editorPage = page;
+let dialog;
+async function leavePreview() { await page.close(); page = editorPage; await page.bringToFront(); }
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 const button = name => page.getByRole('button', { name, exact: true });
@@ -55,9 +59,9 @@ try {
   assert.equal(await page.locator(`.node[data-id="${noteId}"]`).count(), 0, 'dialog children must not leak onto page');
   assert.equal(await page.locator('.artboard').evaluate(el => el.style.width), '1040px', 'dialog width must not resize page');
 
-  await button('预览原型').click();
+  page = await openPreview(editorPage, errors); dialog = page.getByRole('dialog');
   await button('+ 新增成员').click();
-  const dialog = page.getByRole('dialog');
+  dialog = page.getByRole('dialog');
   await dialog.getByText('新增团队成员', { exact: true }).waitFor();
   await dialog.getByText('成员昵称 *', { exact: true }).waitFor();
   await dialog.getByText('团队成员说明', { exact: true }).waitFor();
@@ -75,7 +79,7 @@ try {
   await button('+ 新增成员').click();
   await button('取消').click();
   await dialog.waitFor({ state: 'hidden' });
-  await button('返回编辑').click();
+  await leavePreview();
 
   // A second trigger creates an independent dialog and previews its own elements.
   await page.locator('.node[data-id="query"]').click();
@@ -86,13 +90,13 @@ try {
   assert.equal(await page.locator('.artboard .node').count(), 2);
   await button('文本').click();
   await page.getByRole('textbox', { name: '文字内容', exact: true }).fill('查询专用弹窗');
-  await page.getByRole('button', { name: '预览原型', exact: true }).click();
+  page = await openPreview(editorPage, errors); dialog = page.getByRole('dialog');
   await dialog.getByText('查询专用弹窗', { exact: true }).waitFor();
   assert.equal(await dialog.getByText('团队成员说明', { exact: true }).count(), 0);
   await button('取消').click();
-  await button('返回编辑').click();
+  await leavePreview();
   await returnToPage();
-  await button('预览原型').click();
+  page = await openPreview(editorPage, errors); dialog = page.getByRole('dialog');
   await button('查询').click();
   await dialog.getByText('查询专用弹窗', { exact: true }).waitFor();
   await button('取消').click();
@@ -104,7 +108,7 @@ try {
   });
   await dialog.screenshot({ path: 'test-results/dialog-preview.png' });
   await button('取消').click();
-  await button('返回编辑').click();
+  await leavePreview();
 
   // Undoing creation removes both the container and children, and exits its edit context.
   const count = await page.locator('.dialog-library>button').count();

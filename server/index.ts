@@ -17,6 +17,7 @@ app.addHook('onRequest', async (request, reply) => {
 registerApi(app, repository);
 if (process.argv.includes('--production')) {
   await app.register(fastifyStatic, { root: fileURLToPath(new URL('../dist', import.meta.url)) });
+  app.get('/preview', async (_request, reply) => reply.sendFile('index.html'));
 } else {
   const { createServer } = await import('vite');
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'spa' });
