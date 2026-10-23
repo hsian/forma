@@ -54,7 +54,7 @@ export function PrototypePlayer({ doc, initialDialogId }: { doc: PrototypeDocume
           closeDialog(); void message.success(rowText(e.actionText || '操作成功', rowContext.row));
         } catch (error) { void message.warning(error instanceof Error ? error.message : '操作失败'); }
       };
-      if (e.action === 'deleteRow') save({}); else void form.validateFields().then(save).catch(() => {});
+      void form.validateFields().then(save).catch(() => {});
     }
     if (e.action === 'toggle' && e.targetId) setHidden(old => { const next = new Set(old); next.has(e.targetId!) ? next.delete(e.targetId!) : next.add(e.targetId!); return next; });
     if (e.action === 'filter' && e.targetId) setApplied(old => ({ ...old, [e.targetId!]: structuredClone(values) }));

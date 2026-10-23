@@ -78,6 +78,7 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
       if (!access) return fail(reply, 403, '没有此项目的访问权限');
       if (!['GET', 'HEAD'].includes(request.method)) {
         if (access === 'viewer') return fail(reply, 403, '此项目为只读权限');
+        if (path.includes('/versions') && !path.endsWith('/copy') && access !== 'admin') return fail(reply, 403, '确认和删除迭代版本需要项目管理员权限');
         if ((path === `/api/projects/${projectId}` || path.endsWith('/members') || path.includes('/members/')) && access !== 'admin') return fail(reply, 403, '需要项目管理员权限');
         if (params.pageId && !path.endsWith('/lease') && !path.endsWith('/duplicate')) {
           const lease = leaseInfo(request, params.pageId);

@@ -69,3 +69,20 @@ export const aiMessages = sqliteTable('ai_messages', {
   content: text('content').notNull(), status: text('status').notNull(), provider: text('provider').notNull().default(''),
   createdAt: integer('created_at').notNull(),
 });
+
+export const pageBlobs = sqliteTable('page_blobs', { hash: text('hash').primaryKey(), content: text('content', { mode: 'json' }).$type<PrototypeDocument>().notNull(), bytes: integer('bytes').notNull() });
+export const versionAssetBlobs = sqliteTable('version_asset_blobs', { hash: text('hash').primaryKey(), mime: text('mime').notNull(), data: text('data').notNull(), bytes: integer('bytes').notNull() });
+export const projectVersions = sqliteTable('project_versions', {
+  id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  projectName: text('project_name').notNull(), name: text('name').notNull(), description: text('description').notNull(),
+  createdBy: text('created_by').notNull(), createdAt: integer('created_at').notNull(),
+});
+export const versionPages = sqliteTable('version_pages', {
+  versionId: text('version_id').notNull().references(() => projectVersions.id, { onDelete: 'cascade' }),
+  pageId: text('page_id').notNull(), name: text('name').notNull(), parentId: text('parent_id'), position: integer('position').notNull(),
+  contentHash: text('content_hash').notNull().references(() => pageBlobs.hash),
+}, table => [primaryKey({ columns: [table.versionId, table.pageId] })]);
+export const versionAssets = sqliteTable('version_assets', {
+  versionId: text('version_id').notNull().references(() => projectVersions.id, { onDelete: 'cascade' }),
+  hash: text('hash').notNull().references(() => versionAssetBlobs.hash),
+}, table => [primaryKey({ columns: [table.versionId, table.hash] })]);

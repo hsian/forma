@@ -1,0 +1,62 @@
+import { authenticatedPage } from './browser-auth.mjs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import assert from 'node:assert/strict';
+const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(process.env.PLAYWRIGHT_MODULE_ROOT, 'package.json') : import.meta.url);
+const { chromium } = require('playwright');
+if (!process.env.TEST_URL) throw Error('必须使用隔离数据库');
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
+const page = await authenticatedPage(browser, { viewport: { width: 1600, height: 1000 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+const base = process.env.TEST_URL, root = `${base}/api/projects/default-project/versions`;
+const button = name => page.getByRole('button', { name, exact: true });
+async function create(name) {
+  await button('确认新的迭代版本').click();
+  await page.getByRole('textbox', { name: '迭代版本名称', exact: true }).fill(name);
+  await page.getByRole('textbox', { name: '迭代版本说明', exact: true }).fill('已确认的迭代范围');
+  await button('确认固定版本').click();
+  const row = page.locator('.ant-list-item').filter({ hasText: name });
+  await row.waitFor(); return row;
+}
+let preview;
+try {
+  const child = (await (await page.request.post(`${base}/api/projects/default-project/pages`, { data: { name: '迭代子页面', parentId: 'default-page' } })).json());
+  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await button('项目版本管理').click();
+  assert.equal(await page.locator('.left-panel .version-controls').count(), 0);
+  assert.equal(await page.locator('.right-panel .version-panel').count(), 1);
+  const v1 = await create('V1.0');
+  const popup = page.waitForEvent('popup'); await v1.getByRole('button', { name: '查看版本', exact: true }).click(); preview = await popup;
+  preview.on('pageerror', error => errors.push(error.message));
+  await preview.locator('.preview-page').waitFor();
+  assert.match(preview.url(), /versionId=/);
+  await preview.getByText('V1.0 · 只读预览', { exact: true }).waitFor();
+  await preview.locator('.preview-page [data-preview-id="title"]').getByText('用户管理', { exact: true }).waitFor();
+  await page.locator('.right-panel .panel-tabs').getByRole('button', { name: '设计', exact: true }).click();
+  await page.locator('.node[data-id="title"]').click();
+  await page.getByRole('textbox', { name: '文字内容', exact: true }).fill('下一迭代修改');
+  await page.locator('[data-save-status="saved"]').waitFor();
+  assert.equal((await (await page.request.delete(`${base}/api/pages/${child.id}`))).status(), 200);
+  await page.request.patch(`${base}/api/projects/default-project`, { data: { name: '下一迭代项目名' } });
+  await preview.reload(); await preview.locator('.preview-page').waitFor();
+  await preview.locator('.preview-page [data-preview-id="title"]').getByText('用户管理', { exact: true }).waitFor();
+  await preview.locator('.preview-page-tree').getByText('迭代子页面', { exact: true }).click();
+  await preview.locator('.preview-page-heading').getByText('迭代子页面', { exact: true }).waitFor();
+  assert.match(preview.url(), /versionId=/);
+  await preview.reload(); await preview.locator('.preview-page').waitFor();
+  await preview.screenshot({ path: 'test-results/version-frozen-preview.png' });
+  await button('项目版本管理').click(); await create('V1.1');
+  assert.equal((await (await page.request.get(root)).json()).versions.length, 2);
+  await page.screenshot({ path: 'test-results/version-manager.png' });
+  await v1.getByRole('button', { name: '新建草稿', exact: true }).click();
+  await page.getByRole('dialog').filter({ hasText: '基于「V1.0」' }).getByRole('button', { name: '新建草稿项目', exact: true }).click();
+  await page.locator('.studio[data-server-state="ready"] .node[data-id="title"]').getByText('用户管理', { exact: true }).waitFor();
+  const projectId = await page.getByRole('combobox', { name: '当前项目', exact: true }).evaluate(element => element.closest('.ant-select').innerText);
+  assert.match(projectId, /V1.0 草稿/);
+  await page.locator('.prototype-page-tree .ant-tree-switcher_close').first().click();
+  await page.locator('.prototype-page-tree').getByText('迭代子页面', { exact: true }).waitFor();
+  assert.equal((await (await page.request.get(`${base}/api/pages/default-page/document`)).json()).document.elements.find(e => e.id === 'title').text, '下一迭代修改');
+  assert.deepEqual(errors, []);
+  console.log('PASS: 确认版本、固定链接预览、草稿更新与页面删除不影响历史、版本页面切换和刷新、基于历史新建独立草稿及授权。');
+} catch (error) { await page.screenshot({ path: 'test-results/version-failure.png' }); console.error(errors); throw error; }
+finally { await browser.close(); }

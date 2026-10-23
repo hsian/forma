@@ -3,6 +3,7 @@ import { createRepository, ManagementError } from './db/repository.js';
 import { saveDocumentSchema } from './document-validation.js';
 import { z } from 'zod';
 import type { AuthService } from './auth.js';
+import { VersionError } from './db/versions.js';
 
 export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService) {
   app.get('/api/health', async () => ({ status: 'ok', storage: 'sqlite', app: 'Forma' }));
@@ -20,7 +21,7 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
   const name = z.string().trim().min(1).max(120);
   const manage = <T>(operation: () => T, reply: import('fastify').FastifyReply) => {
     try { return operation(); } catch (error) {
-      if (error instanceof ManagementError) return reply.code(error.statusCode).send({ message: error.message });
+      if (error instanceof ManagementError || error instanceof VersionError) return reply.code(error.statusCode).send({ message: error.message });
       throw error;
     }
   };
@@ -34,7 +35,24 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
     if (!parsed.success) return reply.code(400).send({ message: '项目名称不正确' });
     return manage(() => repository.renameProject(request.params.projectId, parsed.data.name), reply);
   });
-  app.delete<{ Params: { projectId: string } }>('/api/projects/:projectId', async (request, reply) => manage(() => repository.deleteProject(request.params.projectId), reply));
+  app.delete<{ Params: { projectId: string } }>('/api/projects/:projectId', async (request, reply) => manage(() => { const result = repository.deleteProject(request.params.projectId); repository.collectVersionBlobs(); return result; }, reply));
+  app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/versions', async request => ({ versions: repository.listVersions(request.params.projectId) }));
+  app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/versions/draft', async (request, reply) => manage(() => repository.draftVersionManifest(request.params.projectId), reply));
+  app.post<{ Params: { projectId: string } }>('/api/projects/:projectId/versions', async (request, reply) => {
+    const parsed = z.object({ name, description: z.string().max(5000).default(''), stamp: z.string().regex(/^[a-f0-9]{64}$/) }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ message: '请输入版本名称，并重新读取草稿状态' });
+    return manage(() => repository.createVersion(request.params.projectId, parsed.data.name, parsed.data.description, request.identity?.user.username || '本地用户', parsed.data.stamp, () => {
+      if (auth && repository.listPages(request.params.projectId).some(page => { const lease = auth.leaseInfo(request, page.id); return lease.expiresAt && !lease.owned; })) throw new VersionError('项目中有其他窗口正在编辑，请等待对方保存并释放编辑权后确认版本', 423);
+    }), reply);
+  });
+  app.get<{ Params: { projectId: string; versionId: string } }>('/api/projects/:projectId/versions/:versionId', async (request, reply) => manage(() => repository.readVersion(request.params.projectId, request.params.versionId), reply));
+  app.get<{ Params: { projectId: string; versionId: string; snapshotPageId: string } }>('/api/projects/:projectId/versions/:versionId/pages/:snapshotPageId', async (request, reply) => manage(() => repository.readVersionDocument(request.params.projectId, request.params.versionId, request.params.snapshotPageId), reply));
+  app.get<{ Params: { projectId: string; versionId: string; hash: string } }>('/api/projects/:projectId/versions/:versionId/assets/:hash', async (request, reply) => {
+    try { const asset = repository.readVersionAsset(request.params.projectId, request.params.versionId, request.params.hash); return reply.header('Content-Type', asset.mime).header('X-Content-Type-Options', 'nosniff').header('Content-Security-Policy', "default-src 'none'; sandbox").send(Buffer.from(asset.data, 'base64')); }
+    catch (error) { return manage(() => { throw error; }, reply); }
+  });
+  app.delete<{ Params: { projectId: string; versionId: string } }>('/api/projects/:projectId/versions/:versionId', async (request, reply) => manage(() => repository.deleteVersion(request.params.projectId, request.params.versionId), reply));
+  app.post<{ Params: { projectId: string; versionId: string } }>('/api/projects/:projectId/versions/:versionId/copy', async (request, reply) => manage(() => auth ? auth.createProject(() => repository.copyVersion(request.params.projectId, request.params.versionId), request.identity!.user) : repository.copyVersion(request.params.projectId, request.params.versionId), reply));
   app.post<{ Params: { projectId: string } }>('/api/projects/:projectId/pages', async (request, reply) => {
     const parsed = z.object({ name, parentId: z.string().min(1).max(200).nullable().optional() }).safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ message: '页面名称或父页面不正确' });

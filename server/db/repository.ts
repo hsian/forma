@@ -1,3 +1,4 @@
+import { createVersionRepository } from './versions.js';
 import { and, asc, eq } from 'drizzle-orm';
 import { seedDocument, type PrototypeDocument } from '../../shared/model.js';
 import { projects, pages, documents } from './schema.js';
@@ -156,7 +157,7 @@ export function createRepository(db: AppDatabase) {
     });
   }
   return {
-    initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
+    ...createVersionRepository(db), initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
     createProject, renameProject, deleteProject, createPage, updatePage, duplicatePage, deletePage,
   };
 }
