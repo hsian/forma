@@ -2,6 +2,8 @@ import { Button, Input, Select, Switch, Table, Tag } from 'antd';
 import { getSelectConfig, type PrototypeElement, type TableRowAction } from '../shared/model';
 import { tableRows, tableColumns, rowActions, rowText, type RuntimeValue, type RuntimeValues } from '../shared/runtime';
 import { ChoiceView } from './ChoiceView';
+import { AntdElement } from './AntdElement';
+import { componentConfig } from '../shared/antd-catalog';
 
 const members = [
   { key: '1', name: '林晓', email: 'lin.xiao@example.com', role: '管理员', status: '正常', date: '2026-10-20' },
@@ -11,12 +13,16 @@ const members = [
 ];
 export function ElementView({ element: e, preview = false, activate, value, onChange, values = {}, applied = {}, notify, onRowAction }: { element: PrototypeElement; preview?: boolean; activate?: (e: PrototypeElement) => void; value?: RuntimeValue; onChange?: (value: RuntimeValue) => void; values?: RuntimeValues; applied?: RuntimeValues; notify?: (text: string) => void; onRowAction?: (table: PrototypeElement, action: TableRowAction, rowIndex: number) => void }) {
   const common = { width: '100%', height: '100%', fontSize: e.fontSize, color: e.color, borderRadius: e.radius };
+  const config = componentConfig(e.kind, e.component);
   switch (e.kind) {
     case 'rectangle': case 'ellipse': return <div style={{ ...common, background: e.fill, border: `${e.strokeWidth}px solid ${e.stroke}`, borderRadius: e.kind === 'ellipse' ? '50%' : e.radius }} />;
     case 'line': return <svg width="100%" height="100%" style={{ overflow: 'visible' }}><line x1="0" y1="50%" x2="100%" y2="50%" stroke={e.stroke} strokeWidth={Math.max(1, e.strokeWidth)} /></svg>;
     case 'text': return <div className="text-content" style={{ ...common, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{e.text}</div>;
-    case 'button': return <Button style={{ ...common, background: e.fill, borderColor: e.strokeWidth ? e.stroke : 'transparent', borderWidth: e.strokeWidth }} onClick={event => { event.stopPropagation(); activate?.(e); }}>{e.text}</Button>;
-    case 'input': return <Input aria-label={e.name} placeholder={e.text} value={typeof value === 'string' ? value : undefined} onChange={event => onChange?.(event.target.value)} style={{ ...common, background: e.fill }} />;
+    case 'button': {
+      const plain = config.type === 'text' || config.type === 'link';
+      return <Button type={config.type as 'default'} disabled={config.disabled === true} loading={config.loading === true} danger={config.danger === true} size={config.size as 'middle' | undefined} style={{ ...common, background: plain ? 'transparent' : config.danger ? '#ff4d4f' : e.fill, color: plain ? config.danger ? '#ff4d4f' : e.fill : e.color, borderColor: plain ? 'transparent' : e.strokeWidth ? e.stroke : 'transparent', borderWidth: plain ? 0 : e.strokeWidth, borderStyle: config.type === 'dashed' ? 'dashed' : undefined }} onClick={event => { event.stopPropagation(); activate?.(e); }}>{e.text}</Button>;
+    }
+    case 'input': return <Input aria-label={e.name} placeholder={e.text} disabled={config.disabled === true} allowClear={config.allowClear === true} size={config.size as 'middle' | undefined} value={typeof value === 'string' ? value : undefined} onChange={event => onChange?.(event.target.value)} style={{ ...common, background: e.fill }} />;
     case 'tabs': case 'tree': case 'checkbox': return <div style={{ ...common, overflow: 'auto', background: e.fill }}><ChoiceView element={e} value={value} onChange={onChange}/></div>;
     case 'select': {
       const config = getSelectConfig(e);
@@ -27,7 +33,7 @@ export function ElementView({ element: e, preview = false, activate, value, onCh
         allowClear={config.allowClear} disabled={config.disabled} virtual={false} maxTagCount="responsive"
         getPopupContainer={trigger => trigger.parentElement!} />;
     }
-    case 'switch': return <Switch aria-label={e.name} defaultChecked />;
+    case 'switch': return <Switch key={JSON.stringify(config)} aria-label={e.name} defaultChecked={config.checked !== false} {...(value !== undefined ? { checked: value === 'true' } : {})} disabled={config.disabled === true} loading={config.loading === true} checkedChildren={String(config.checkedChildren || '')} unCheckedChildren={String(config.unCheckedChildren || '')} onChange={next => onChange?.(String(next))}/>;
     case 'table': if (e.table) {
       const rows = tableRows(e, values, applied);
       const actions = rowActions(e.table);
@@ -43,5 +49,6 @@ export function ElementView({ element: e, preview = false, activate, value, onCh
       { title: '状态', dataIndex: 'status', render: (status: string) => <Tag bordered={false} color={status === '正常' ? 'success' : 'default'}>{status}</Tag> },
       { title: '加入时间', dataIndex: 'date' },
     ]} /></div>;
+    default: return <AntdElement key={JSON.stringify(e.component)} element={e} preview={preview} value={value} onChange={onChange} activate={activate} notify={notify}/>;
   }
 }

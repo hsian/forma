@@ -43,3 +43,7 @@
 .topbar .save-state.error,.topbar .save-state.conflict{color:#d68b36}
 .current-page-name{font-weight:400}
 @media(max-width:800px){.topbar{padding:0 12px;gap:8px;grid-template-columns:minmax(100px,1fr) auto minmax(100px,1fr)}.topbar .brand{gap:8px}.topbar .brand strong{font-size:20px}.topbar>.header-right{gap:4px}.topbar .canvas-tools{gap:2px}.topbar .tool-divider{margin:0 4px}}
+.canvas-bottom,.left-footer,.inspector-footer{height:44px;min-height:44px;flex-shrink:0;box-sizing:border-box}
+.left-footer{padding:0 16px;flex-wrap:nowrap;white-space:nowrap;overflow:hidden}
+.left-footer>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.inspector-footer{padding:0 20px;white-space:nowrap}

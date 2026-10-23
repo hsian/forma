@@ -28,7 +28,7 @@ try {
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.getByRole('button', { name: '元素', exact: true }).click();
   await page.getByPlaceholder('搜索元素', { exact: true }).fill('select');
-  assert.equal(await page.locator('.element-card').count(), 1);
+  assert.equal(await page.locator('.element-card').count(), 2, 'Select 和 TreeSelect 都可通过英文搜索');
   await button('Select 选择器').click();
   const id = await page.locator('.node-selected').getAttribute('data-id');
   const node = page.locator(`.node[data-id="${id}"]`);

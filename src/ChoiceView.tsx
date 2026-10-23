@@ -3,12 +3,14 @@ import { Checkbox, Input, Tabs, Tree, Empty } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import type { PrototypeElement } from '../shared/model';
 import type { RuntimeValue } from '../shared/runtime';
+import { componentConfig } from '../shared/antd-catalog';
 
 export function ChoiceView({ element: e, value, onChange }: { element: PrototypeElement; value?: RuntimeValue; onChange?: (value: RuntimeValue) => void }) {
   const [search, setSearch] = useState('');
   const options = e.choices?.options || [];
   const defaults = e.choices?.defaultValues || [];
-  if (e.kind === 'tabs') return <Tabs className="prototype-tabs" activeKey={typeof value === 'string' ? value : defaults[0]} items={options.map(o => ({ key: o.id, label: o.label }))} onChange={onChange}/>;
+  const config = componentConfig(e.kind, e.component);
+  if (e.kind === 'tabs') return <Tabs className="prototype-tabs" type={config.type as 'line'} tabPosition={config.tabPosition as 'top'} activeKey={typeof value === 'string' ? value : defaults[0]} items={options.map(o => ({ key: o.id, label: o.label }))} onChange={onChange}/>;
   if (e.kind === 'checkbox') {
     const checked = Array.isArray(value) ? value : defaults;
     const all = options.length > 0 && options.every(o => checked.includes(o.id));

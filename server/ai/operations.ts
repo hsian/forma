@@ -33,7 +33,8 @@ export function applyAiResult(source: PrototypeDocument, result: AiResult) {
       elementSchema.shape.kind.parse(op.kind);
       const patch = parseProperties(elementPatch, properties, index);
       const { table, ...attributes } = patch;
-      doc.elements.push({ ...makeElement(op.kind as ElementKind), ...attributes, ...(table ? { table: { columns: [], rows: [], pageSize: 5, ...table } } : {}), id: op.targetId }); changedIds.add(op.targetId);
+      const element = makeElement(op.kind as ElementKind);
+      doc.elements.push({ ...element, ...attributes, ...(attributes.component ? { component: { ...element.component, ...attributes.component } } : {}), ...(table ? { table: { columns: [], rows: [], pageSize: 5, ...table } } : {}), id: op.targetId }); changedIds.add(op.targetId);
     } else if (op.type === 'updateElement' || op.type === 'removeElement') {
       const target = doc.elements.find(e => e.id === op.targetId);
       if (!target) throw Error('修改目标不存在');
@@ -42,8 +43,10 @@ export function applyAiResult(source: PrototypeDocument, result: AiResult) {
       else {
         const patch = parseProperties(elementPatch, properties, index);
         const table = patch.table ? { columns: [], rows: [], pageSize: 5, ...target.table, ...patch.table } : target.table;
+        const component = patch.component ? { ...target.component, ...patch.component } : target.component;
         Object.assign(target, patch);
         if (patch.table) target.table = table;
+        if (patch.component) target.component = component;
       }
       changedIds.add(op.targetId);
     } else if (op.type === 'upsertDialog') {
