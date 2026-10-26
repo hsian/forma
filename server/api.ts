@@ -18,7 +18,7 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
     if (!page) return reply.code(404).send({ message: '暂无可访问的项目，请创建项目或联系管理员' });
     return { ...repository.bootstrap(page.id), projectRole: auth.role(user, page.projectId), permissions: auth.access(user, page.projectId)?.permissions || [], canCreateProject: user.role === 'admin' || !!user.canCreateProject };
   });
-  app.get('/api/projects', async request => ({ projects: auth ? auth.allowedProjects(request.identity!.user) : repository.listProjects() }));
+  app.get('/api/projects', async request => ({ projects: auth ? auth.allowedProjects(request.identity!.user).map(project => ({ ...project, projectRole: auth.role(request.identity!.user, project.id) })) : repository.listProjects() }));
   app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/pages', async request => ({ pages: repository.listPages(request.params.projectId) }));
   const name = z.string().trim().min(1).max(120);
   const manage = <T>(operation: () => T, reply: import('fastify').FastifyReply) => {

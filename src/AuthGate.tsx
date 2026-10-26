@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Alert, App, Button, Dropdown, Form, Input, Spin } from 'antd';
 import type { AuthUser, ProjectRole } from '../shared/auth';
 import './auth.css';
-import { ManagementCenter } from './ManagementCenter';
 
 export async function authApi<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
@@ -33,7 +32,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     finally { setBusy(false); }
   }
   async function logout() { await authApi('/api/auth/logout', 'POST'); setState({ setupRequired: false, user: null }); setHasProject(false); }
-  if (state?.user && hasProject) return <Context.Provider value={{ user: state.user, logout }}>{children}</Context.Provider>;
+  if (state?.user && (hasProject || window.location.pathname === '/manage')) return <Context.Provider value={{ user: state.user, logout }}>{children}</Context.Provider>;
   return <main className="auth-screen"><section className="auth-card"><div className="auth-brand">forma</div>{!state ? <>{error ? <><Alert type="error" message={error}/><Button onClick={() => { void refresh().catch(error => setError(error.message)); }}>重新连接</Button></> : <Spin tip="正在连接"/>}</> : state.user ? <>
     <h1>还没有可访问的项目</h1><p>{state.user.role === 'admin' || state.user.canCreateProject ? '你可以创建自己的项目，或请管理员添加项目权限。' : '请联系项目管理员添加项目访问权限。'}</p><Form disabled={state.user.role !== 'admin' && !state.user.canCreateProject} onFinish={async values => { setBusy(true); try { await authApi('/api/projects', 'POST', { name: values.name }); await refresh(); } catch (error) { setError((error as Error).message); } finally { setBusy(false); } }}><Form.Item name="name" rules={[{ required: true, message: '请输入项目名称' }]}><Input aria-label="项目名称" placeholder="项目名称" maxLength={120}/></Form.Item><Button block type="primary" htmlType="submit" loading={busy}>创建项目</Button></Form><Button onClick={() => { void refresh(); }}>刷新权限</Button><Button onClick={() => { void logout(); }}>退出登录</Button>
   </> : <>
@@ -49,13 +48,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 export function AccountMenu({ projectId, projectRole, flush }: { projectId: string; projectRole?: ProjectRole; flush: () => Promise<boolean> }) {
   const { user, logout } = useAuth(); const { message } = App.useApp();
-  const [open, setOpen] = useState(false);
   const manage = user.role === 'admin' || projectRole === 'admin';
-  useEffect(() => { if (!manage) setOpen(false); }, [manage]);
   return <><Dropdown trigger={['click']} menu={{ items: [{ key: 'identity', label: `${user.username} · ${user.role === 'admin' ? '系统管理员' : '成员'}`, disabled: true }, ...(manage ? [{ key: 'members', label: '账号与项目权限' }] : []), { key: 'logout', label: '退出登录' }], onClick: ({ key }) => {
-    if (key === 'members') void flush().then(saved => { if (saved) setOpen(true); else void message.warning('请先保存或处理当前页面的修改'); });
+    if (key === 'members') void flush().then(saved => { if (saved) window.location.assign(`/manage?${new URLSearchParams({ projectId })}`); else void message.warning('请先保存或处理当前页面的修改'); });
     if (key === 'logout') void flush().then(async saved => { if (saved) await logout(); else void message.warning('请先保存或处理当前页面的修改'); });
   } }}><Button className="account-menu" aria-label="账号菜单" title={user.username}>{user.username.slice(0, 2).toUpperCase()}</Button></Dropdown>
-    {open && <ManagementCenter projectId={projectId} onClose={() => setOpen(false)}/>}
   </>;
 }

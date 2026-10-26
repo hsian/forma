@@ -1,0 +1,75 @@
+import { authenticatedPage } from './browser-auth.mjs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import assert from 'node:assert/strict';
+const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(process.env.PLAYWRIGHT_MODULE_ROOT, 'package.json') : import.meta.url);
+const { chromium } = require('playwright');
+if (!process.env.TEST_URL) throw Error('必须使用隔离测试数据库');
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
+const page = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+const base = process.env.TEST_URL;
+const button = name => page.getByRole('button', { name, exact: true });
+async function enterManagement() { await button('账号菜单').click(); await page.getByRole('menuitem', { name: '账号与项目权限', exact: true }).click(); await page.locator('.management-page').waitFor(); }
+async function chooseProject(name) {
+  await page.locator('.management-scope .ant-select').click();
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').locator('.ant-select-item-option').filter({ hasText: new RegExp('^' + name + '$') }).click();
+}
+try {
+  const second = (await (await page.request.post(`${base}/api/projects`, { data: { name: '另一个管理项目' } })).json()).project;
+  assert.equal((await page.request.get(`${base}/manage`)).status(), 200, '生产环境可以直接访问管理页');
+  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.locator('.node[data-id="title"]').click();
+  await page.getByRole('textbox', { name: '文字内容', exact: true }).fill('进入管理中心之前的修改');
+  await enterManagement();
+  assert.equal(new URL(page.url()).pathname, '/manage');
+  await page.getByRole('heading', { name: '项目成员', exact: true }).waitFor();
+  assert.equal(await page.locator('.studio').count(), 0);
+  assert.equal(await page.getByRole('dialog').count(), 0);
+  assert.equal((await (await page.request.get(`${base}/api/pages/default-page/document`)).json()).document.elements.find(element => element.id === 'title').text, '进入管理中心之前的修改');
+  await page.waitForFunction(async () => !(await (await fetch('/api/pages/default-page/lease')).json()).lease.expiresAt);
+  await button('角色与权限').click(); await button('复制角色').click();
+  await page.getByRole('textbox', { name: '角色名称', exact: true }).fill('尚未保存的角色');
+  await button('返回原型设计').click();
+  await page.locator('.ant-modal-confirm-title').filter({ hasText: '有尚未保存的权限配置' }).waitFor();
+  await button('继续编辑').click(); assert.equal(new URL(page.url()).pathname, '/manage');
+  await button('返回原型设计').click(); await button('放弃修改').click();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.locator('.node[data-id="title"]').getByText('进入管理中心之前的修改', { exact: true }).waitFor();
+  await enterManagement(); await button('角色与权限').click(); await chooseProject('另一个管理项目');
+  await page.waitForURL(url => url.pathname === '/manage' && url.searchParams.get('projectId') === second.id);
+  await page.getByRole('heading', { name: '角色与权限', exact: true }).waitFor();
+  await page.reload(); await page.getByRole('heading', { name: '角色与权限', exact: true }).waitFor();
+  assert.equal(await page.getByRole('dialog').count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.management-content .ant-spin-blur'));
+  await page.screenshot({ path: 'test-results/management-page-roles.png', fullPage: true, animations: 'disabled' });
+  await button('项目成员').click(); await page.getByRole('heading', { name: '项目成员', exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/management-page-members.png', fullPage: true, animations: 'disabled' });
+  const user = (await (await page.request.post(`${base}/api/admin/users`, { data: { username: 'project-manager', password: 'password-123' } })).json()).user;
+  await page.request.put(`${base}/api/projects/default-project/members/${user.id}`, { data: { role: 'viewer' } });
+  await page.request.put(`${base}/api/projects/${second.id}/members/${user.id}`, { data: { role: 'admin' } });
+  const context = await browser.newContext();
+  await context.request.post(`${base}/api/auth/login`, { data: { username: user.username, password: 'password-123' } });
+  const manager = await context.newPage(); manager.on('pageerror', error => errors.push(error.message));
+  await manager.goto(`${base}/manage?projectId=default-project`);
+  await manager.getByRole('heading', { name: '项目成员', exact: true }).waitFor();
+  assert.equal(new URL(manager.url()).searchParams.get('projectId'), second.id, '仅允许切换到具有管理权的项目');
+  assert.equal(await manager.getByRole('button', { name: '系统账号', exact: true }).count(), 0);
+  assert.equal((await manager.request.get(`${base}/api/projects/default-project/roles`)).status(), 403);
+  await page.request.put(`${base}/api/projects/${second.id}/members/${user.id}`, { data: { role: 'viewer' } });
+  await manager.reload(); await manager.getByText('你目前没有项目管理权限，请联系项目管理员。', { exact: true }).waitFor();
+  assert.equal(await manager.locator('.studio').count(), 0);
+  const guest = await browser.newPage(); await guest.goto(`${base}/manage?projectId=${second.id}&section=roles`);
+  await guest.getByRole('heading', { name: '登录工作台', exact: true }).waitFor();
+  await guest.getByRole('textbox', { name: '用户名', exact: true }).fill('qa-admin'); await guest.getByLabel('密码', { exact: true }).fill('qa-password-123');
+  await guest.getByRole('button', { name: '登录', exact: true }).click();
+  await guest.getByRole('heading', { name: '角色与权限', exact: true }).waitFor();
+  assert.equal(new URL(guest.url()).pathname, '/manage');
+  await guest.route('**/api/projects', route => route.fulfill({ json: { projects: [] } }));
+  await guest.reload(); await guest.getByRole('heading', { name: '系统账号', exact: true }).waitFor();
+  assert.equal(await guest.locator('.studio').count(), 0, '即使没有项目，系统管理员仍可独立管理账号');
+  await page.setViewportSize({ width: 1000, height: 800 }); await page.screenshot({ path: 'test-results/management-page-compact.png', fullPage: true });
+  assert.deepEqual(errors, []);
+  console.log('PASS: 独立管理页、保存后进入、返回设计、未保存提醒、项目切换、刷新直达、登录跳转和管理权限隔离。');
+} catch (error) { await page.screenshot({ path: 'test-results/management-page-error.png', fullPage: true }); throw error; }
+finally { await browser.close(); }

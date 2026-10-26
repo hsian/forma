@@ -26,7 +26,7 @@ try {
   assert.equal((await (await page.request.get(`${base}/api/pages/default-page/lease`)).json()).lease.expiresAt, undefined);
   assert.equal((await (await page.request.get(`${base}/api/auth/status`)).json()).user.role, 'admin');
   await button(page, '账号菜单').click(); await page.getByRole('menuitem', { name: '账号与项目权限', exact: true }).click();
-  const dialog = page.locator('.management-modal'); await dialog.getByRole('heading', { name: '项目成员', exact: true }).waitFor();
+  const dialog = page.locator('.management-page'); await dialog.getByRole('heading', { name: '项目成员', exact: true }).waitFor();
   for (const [username, access] of [['editor', '可编辑（兼容）'], ['reader', '只读成员']]) {
     await dialog.getByRole('button', { name: '系统账号', exact: true }).click();
     await button(page, '创建账号').click();
@@ -41,7 +41,7 @@ try {
     await dialog.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
   }
   await page.screenshot({ path: 'test-results/auth-members.png', fullPage: true });
-  await dialog.locator('.ant-modal-close').click(); await dialog.waitFor({ state: 'hidden' });
+  await button(page, '返回原型设计').click(); await page.locator('.studio[data-server-state="ready"]').waitFor();
   const editor = await login('editor');
   assert.equal((await (await page.request.get(`${base}/api/pages/default-page/lease`)).json()).lease.expiresAt, undefined, '打开两个窗口都不占用页面');
   await page.locator('.node[data-id="title"]').click();
