@@ -20,6 +20,85 @@ function fixture() {
   return { app, connection, repository, request, cookie, advance: (amount: number) => { time += amount; } };
 }
 
+test('细分操作权限、自定义角色作用域、即时撤权与角色替换', async () => {
+  const f = fixture();
+  try {
+    const admin = f.cookie(await f.request('POST', '/api/auth/setup', '', '', { username: 'admin', password: 'password-123' }));
+    const account = (await f.request('POST', '/api/admin/users', admin, '', { username: 'designer', password: 'password-123' })).json().user;
+    const member = f.cookie(await f.request('POST', '/api/auth/login', '', '', { username: 'designer', password: 'password-123' }));
+    const base = '/api/projects/default-project';
+    assert.equal((await f.request('GET', `${base}/roles`)).statusCode, 401);
+    const input = { name: '定制设计角色', description: '编辑但不能删除页面或导入', permissions: ['prototype.read', 'prototype.edit', 'page.manage'] };
+    const custom = await f.request('POST', `${base}/roles`, admin, '', input); assert.equal(custom.statusCode, 200, custom.body);
+    const roleId = custom.json().id;
+    assert.equal((await f.request('POST', `${base}/roles`, admin, '', { ...input, permissions: ['prototype.edit'] })).statusCode, 400);
+    assert.equal((await f.request('POST', `${base}/roles`, admin, '', { ...input, permissions: ['prototype.read', 'member.manage'] })).statusCode, 400);
+    assert.equal((await f.request('PUT', `${base}/members/${account.id}`, admin, '', { role: roleId })).statusCode, 200);
+    const windowId = randomUUID();
+    assert.equal((await f.request('POST', '/api/pages/default-page/lease', member, windowId)).statusCode, 200);
+    assert.equal((await f.request('DELETE', '/api/pages/default-page', member, windowId)).statusCode, 403);
+    assert.equal((await f.request('POST', `${base}/sketch`, member, '', {})).statusCode, 403);
+    assert.equal((await f.request('POST', `${base}/versions`, member, '', {})).statusCode, 403);
+    assert.equal((await f.request('POST', `${base}/roles`, member, '', input)).statusCode, 403);
+    const other = (await f.request('POST', '/api/projects', admin, '', { name: '另一个项目' })).json().project.id;
+    assert.equal((await f.request('PUT', `/api/projects/${other}/members/${account.id}`, admin, '', { role: roleId })).statusCode, 400);
+    assert.equal((await f.request('PUT', `/api/projects/${other}/roles/${roleId}`, admin, '', input)).statusCode, 404);
+    await f.request('PUT', `/api/projects/${other}/members/${account.id}`, admin, '', { role: 'admin' });
+    assert.equal((await f.request('DELETE', `/api/projects/${other}`, member)).statusCode, 403, '新项目的普通项目管理员不能删除项目');
+    const content = f.repository.readDocument('default-page')!;
+    const update = await f.request('PUT', `${base}/roles/${roleId}`, admin, '', { ...input, revision: 1, permissions: ['prototype.read'] }); assert.equal(update.statusCode, 200, update.body);
+    assert.equal((await f.request('PUT', `${base}/roles/${roleId}`, admin, '', { ...input, revision: 1 })).statusCode, 409, '旧配置不能覆盖其他管理员的新配置');
+    assert.equal((await f.request('GET', '/api/pages/default-page/lease', admin)).json().lease.expiresAt, undefined);
+    assert.equal((await f.request('PUT', '/api/pages/default-page/document', member, windowId, { document: content.document, revision: content.revision })).statusCode, 403);
+    assert.equal((await f.request('DELETE', `${base}/roles/${roleId}`, admin, '', {})).statusCode, 400);
+    assert.equal((await f.request('DELETE', `${base}/roles/${roleId}`, admin, '', { replacement: 'designer' })).statusCode, 200);
+    assert.equal((await f.request('GET', `${base}/permissions`, member)).json().role.id, 'designer');
+    assert.equal((await f.request('DELETE', `${base}/roles/viewer`, admin, '', { replacement: 'designer' })).statusCode, 404);
+    assert.equal((await f.request('GET', `${base}/audit`, member)).statusCode, 403);
+    const entries = (await f.request('GET', `${base}/audit`, admin)).json().entries;
+    assert.ok(entries.some((entry: { action: string }) => entry.action === '删除角色'));
+    assert.equal((await f.request('PUT', `${base}/members/${account.id}`, admin, '', { role: 'publisher' })).statusCode, 200);
+    assert.equal((await f.request('GET', `${base}/permissions`, member)).json().permissions.includes('version.publish'), true);
+    assert.equal((await f.request('DELETE', `${base}/versions/absent`, member)).statusCode, 403);
+  } finally { await f.app.close(); }
+});
+
+test('账号停用、密码重置、创建项目资格及所有权转交保留授权边界', async () => {
+  const f = fixture();
+  try {
+    const setup = await f.request('POST', '/api/auth/setup', '', '', { username: 'admin', password: 'password-123' });
+    const admin = f.cookie(setup); const adminId = setup.json().user.id;
+    const account = (await f.request('POST', '/api/admin/users', admin, '', { username: 'member', password: 'password-123' })).json().user;
+    let member = f.cookie(await f.request('POST', '/api/auth/login', '', '', { username: 'member', password: 'password-123' }));
+    const path = `/api/admin/users/${account.id}`;
+    await f.request('PUT', `/api/projects/default-project/members/${account.id}`, admin, '', { role: 'editor' });
+    assert.equal((await f.request('PATCH', path, member, '', { enabled: false })).statusCode, 403);
+    assert.equal((await f.request('PATCH', `/api/admin/users/${adminId}`, admin, '', { enabled: false })).statusCode, 400);
+    await f.request('PATCH', path, admin, '', { canCreateProject: false });
+    assert.equal((await f.request('POST', '/api/projects', member, '', { name: '禁止创建' })).statusCode, 403);
+    const client = randomUUID(); await f.request('POST', '/api/pages/default-page/lease', member, client);
+    assert.equal((await f.request('PATCH', path, admin, '', { enabled: false })).statusCode, 200);
+    assert.equal((await f.request('GET', '/api/projects', member)).statusCode, 401);
+    assert.equal((await f.request('GET', '/api/pages/default-page/lease', admin)).json().lease.expiresAt, undefined);
+    assert.equal((await f.request('POST', '/api/auth/login', '', '', { username: 'member', password: 'password-123' })).statusCode, 401);
+    await f.request('PATCH', path, admin, '', { enabled: true });
+    member = f.cookie(await f.request('POST', '/api/auth/login', '', '', { username: 'member', password: 'password-123' }));
+    assert.equal((await f.request('POST', '/api/projects/default-project/owner', member, '', { userId: account.id })).statusCode, 403);
+    assert.equal((await f.request('POST', '/api/projects/default-project/owner', admin, '', { userId: account.id })).statusCode, 200);
+    assert.equal((await f.request('GET', '/api/projects/default-project/permissions', member)).json().role.id, 'admin');
+    assert.equal((await f.request('PUT', `/api/projects/default-project/members/${account.id}`, admin, '', { role: 'viewer' })).statusCode, 400);
+    assert.equal((await f.request('PATCH', path, admin, '', { password: 'new-password-123' })).statusCode, 200);
+    assert.equal((await f.request('GET', '/api/projects', member)).statusCode, 401);
+    assert.equal((await f.request('POST', '/api/auth/login', '', '', { username: 'member', password: 'password-123' })).statusCode, 401);
+    assert.equal((await f.request('POST', '/api/auth/login', '', '', { username: 'member', password: 'new-password-123' })).statusCode, 200);
+    assert.equal((await f.request('GET', '/api/admin/users', member)).statusCode, 401);
+    const entries = (await f.request('GET', '/api/admin/audit', admin)).json().entries;
+    assert.ok(entries.some((entry: { action: string }) => entry.action === '重置密码'));
+    assert.ok(!JSON.stringify(entries).includes('new-password-123'));
+    assert.ok(!(await f.request('GET', '/api/admin/users', admin)).body.includes('passwordHash'));
+  } finally { await f.app.close(); }
+});
+
 test('首次初始化并发只产生一个管理员，接管现有项目并保留原型，关闭后续公开注册', async () => {
   const f = fixture();
   try {

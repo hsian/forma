@@ -20,7 +20,7 @@ export function sketchBoards(archive: ReturnType<typeof openSketch>) {
   return boards;
 }
 
-export function registerSketchApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>) {
+export function registerSketchApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: import('../auth.js').AuthService) {
   const uploads=new Map<string,{directory:string;file:string;projectId:string;userId:string;expires:number;boards:ReturnType<typeof sketchBoards>;preparing?:boolean;controller?:AbortController;prepared?:{pageId:string;boardId:string;path:string}} >();
   app.addContentTypeParser('application/octet-stream',{parseAs:'buffer'},(_request,body,done)=>done(null,body));
   async function discard(token:string) { const item=uploads.get(token);if(!item)return;item.controller?.abort();uploads.delete(token);await rm(item.directory,{recursive:true,force:true}); }
@@ -75,6 +75,7 @@ export function registerSketchApi(app: FastifyInstance, repository: ReturnType<t
       if(result.report.issues.some(i=>i.severity==='error'))return reply.code(422).send({message:'画板有无法转换的图层，请先处理导入报告中的错误',report:result.report});
       if(result.report.issues.length && input.success && !input.data.acceptWarnings)return reply.code(409).send({message:'请先查看并确认导入报告中的外观差异',report:result.report});
       Object.assign(result.document.importInfo!,{importedAt:Date.now(),importedBy:request.identity?.user.username||'本地用户',acknowledgedDifferences:input.success&&!!input.data.acceptWarnings});
+      if (auth && !auth.can(request.identity!.user, request.params.projectId, 'sketch.import')) return reply.code(403).send({ message: '导入权限已变化，尚未创建页面' });
       const document=documentSchema.parse(result.document);
       if(!document.elements.length)throw Error('所选画板没有可转换的可见元素');
       if(Buffer.byteLength(JSON.stringify(document))>8*1024*1024)throw Error('转换后的单页超过 8MB，请减少画板中的图片或图层后重试');

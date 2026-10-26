@@ -5,6 +5,8 @@ export const users = sqliteTable('users', {
   id: text('id').primaryKey(), username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(), role: text('role').$type<'admin' | 'member'>().notNull(),
   createdAt: integer('created_at').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  canCreateProject: integer('can_create_project', { mode: 'boolean' }).notNull().default(true),
 });
 export const sessions = sqliteTable('sessions', {
   tokenHash: text('token_hash').primaryKey(), userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -13,6 +15,7 @@ export const sessions = sqliteTable('sessions', {
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
   ownerId: text('owner_id').references(() => users.id),
+  legacyAdminDelete: integer('legacy_admin_delete', { mode: 'boolean' }).notNull().default(false),
   name: text('name').notNull(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
@@ -21,7 +24,18 @@ export const projectMembers = sqliteTable('project_members', {
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   role: text('role').$type<'admin' | 'editor' | 'viewer'>().notNull(),
+  customRoleId: text('custom_role_id'),
 }, table => [primaryKey({ columns: [table.projectId, table.userId] })]);
+export const projectRoles = sqliteTable('project_roles', {
+  id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), description: text('description').notNull(),
+  permissions: text('permissions', { mode: 'json' }).$type<import('../../shared/auth.js').Permission[]>().notNull(),
+  revision: integer('revision').notNull().default(1),
+});
+export const permissionAudit = sqliteTable('permission_audit', {
+  id: text('id').primaryKey(), projectId: text('project_id'), actor: text('actor').notNull(),
+  target: text('target').notNull(), action: text('action').notNull(), detail: text('detail').notNull(), createdAt: integer('created_at').notNull(),
+});
 export const folders = sqliteTable('folders', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),

@@ -1,0 +1,65 @@
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import assert from 'node:assert/strict';
+const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(process.env.PLAYWRIGHT_MODULE_ROOT, 'package.json') : import.meta.url);
+const { chromium } = require('playwright');
+if (!process.env.TEST_URL) throw Error('必须使用隔离测试服务器');
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+const base = process.env.TEST_URL;
+const button = (name, parent = page) => parent.getByRole('button', { name, exact: true });
+async function choose(label, option) {
+  await page.locator('.ant-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) }).click();
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').last().locator('.ant-select-item-option').filter({ hasText: new RegExp('^' + option + '$') }).click();
+}
+try {
+  const setup = await page.request.post(`${base}/api/auth/setup`, { data: { username: 'admin', password: 'password-123' } }); assert.equal(setup.status(), 200);
+  const created = await page.request.post(`${base}/api/admin/users`, { data: { username: 'designer', password: 'password-123' } }); const account = (await created.json()).user;
+  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await button('账号菜单').click(); await page.getByRole('menuitem', { name: '账号与项目权限', exact: true }).click();
+  const center = page.locator('.management-modal');
+  await center.getByRole('heading', { name: '项目成员', exact: true }).waitFor();
+  await button('角色与权限', center).click();
+  await button('复制角色', center).click();
+  await page.getByRole('textbox', { name: '角色名称', exact: true }).fill('外部设计协作');
+  await page.getByRole('textbox', { name: '角色说明', exact: true }).fill('可设计页面，不能删除和导入');
+  await page.getByRole('checkbox', { name: '导入 Sketch', exact: true }).uncheck();
+  await button('项目成员', center).click();
+  await page.locator('.ant-modal-confirm-title').filter({ hasText: '有尚未保存的权限配置' }).waitFor();
+  await button('继续编辑').click();
+  await button('保存角色').click();
+  await page.locator('.ant-modal-confirm-title').filter({ hasText: '确认创建角色' }).waitFor(); await button('确认保存').click();
+  await center.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
+  await center.locator('.management-role-list').getByRole('button', { name: /外部设计协作/ }).waitFor();
+  await page.screenshot({ path: 'test-results/permissions-roles.png', fullPage: true });
+  await button('项目成员', center).click(); await button('添加成员').click();
+  await choose('选择成员账号', 'designer'); await choose('新成员项目角色', '外部设计协作');
+  await button('确认加入').click(); await page.getByRole('dialog', { name: '添加项目成员', exact: true }).waitFor({ state: 'hidden' });
+  await center.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
+  const row = center.getByRole('row').filter({ hasText: 'designer' });
+  await row.getByRole('button', { name: '查看权限' }).click();
+  const detail = page.getByRole('dialog', { name: 'designer 的有效权限' });
+  await detail.getByText('项目角色：外部设计协作', { exact: false }).waitFor();
+  assert.equal(await detail.getByText('导入 Sketch', { exact: true }).count(), 0);
+  await button('关闭', detail).click();
+  await button('调整角色', row).click(); await choose('调整后的项目角色', '只读成员');
+  // Selecting a role alone must not save it.
+  let membership = await (await page.request.get(`${base}/api/projects/default-project/members`)).json();
+  assert.ok(membership.members.find(member => member.userId === account.id).customRoleId);
+  await button('确认保存').click(); await page.getByRole('dialog', { name: '调整角色 · designer' }).waitFor({ state: 'hidden' });
+  await center.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
+  membership = await (await page.request.get(`${base}/api/projects/default-project/members`)).json(); assert.equal(membership.members.find(member => member.userId === account.id).role, 'viewer');
+  await page.screenshot({ path: 'test-results/permissions-members.png', fullPage: true });
+  await button('系统账号', center).click();
+  await page.getByRole('switch', { name: 'designer 启用状态', exact: true }).click();
+  await button('确认').click(); await center.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
+  assert.equal((await page.request.post(`${base}/api/auth/login`, { data: { username: 'designer', password: 'password-123' } })).status(), 401);
+  await page.screenshot({ path: 'test-results/permissions-accounts.png', fullPage: true });
+  await button('变更记录', center).click();
+  await center.getByRole('cell', { name: '分配角色', exact: true }).first().waitFor();
+  await page.screenshot({ path: 'test-results/permissions-audit.png', fullPage: true });
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await button('角色与权限', center).click(); await page.screenshot({ path: 'test-results/permissions-compact.png', fullPage: true });
+  assert.deepEqual(errors, []);
+} catch (error) { await page.screenshot({ path: 'test-results/permissions-error.png', fullPage: true }); throw error; } finally { await browser.close(); }

@@ -10,6 +10,40 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { seedDocument } from '../shared/model';
+import { permissionService } from '../server/permissions';
+
+test('权限升级保留已有账号、项目归属和编辑成员能力，重复迁移不改变授权', () => {
+  mkdirSync('test-results', { recursive: true });
+  const directory = mkdtempSync(resolve('test-results/permissions-upgrade-'));
+  const migrations = resolve(directory, 'old-migrations');
+  mkdirSync(resolve(migrations, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync('drizzle/meta/_journal.json', 'utf8'));
+  journal.entries = journal.entries.slice(0, 5);
+  writeFileSync(resolve(migrations, 'meta/_journal.json'), JSON.stringify(journal));
+  for (const entry of journal.entries) copyFileSync(`drizzle/${entry.tag}.sql`, resolve(migrations, `${entry.tag}.sql`));
+  const path = resolve(directory, 'old.db');
+  const old = new Database(path); old.pragma('foreign_keys = ON');
+  migrate(drizzle(old), { migrationsFolder: migrations });
+  old.prepare('INSERT INTO users (id,username,password_hash,role,created_at) VALUES (?,?,?,?,?)').run('old-admin', 'old-admin', 'existing-password-hash', 'admin', 1);
+  old.prepare('INSERT INTO users (id,username,password_hash,role,created_at) VALUES (?,?,?,?,?)').run('old-member', 'old-member', 'existing-member-hash', 'member', 1);
+  old.prepare('INSERT INTO projects (id,name,owner_id,created_at,updated_at) VALUES (?,?,?,?,?)').run('old-project', '旧项目', 'old-admin', 1, 1);
+  old.prepare('INSERT INTO project_members (project_id,user_id,role) VALUES (?,?,?)').run('old-project', 'old-member', 'editor');
+  old.close();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const upgraded = openDatabase(path);
+    try {
+      const account = upgraded.sqlite.prepare('SELECT * FROM users WHERE id = ?').get('old-member') as { enabled: number; can_create_project: number; password_hash: string };
+      assert.equal(account.enabled, 1); assert.equal(account.can_create_project, 1); assert.equal(account.password_hash, 'existing-member-hash');
+      const project = upgraded.sqlite.prepare('SELECT * FROM projects WHERE id = ?').get('old-project') as { owner_id: string; legacy_admin_delete: number };
+      assert.equal(project.owner_id, 'old-admin'); assert.equal(project.legacy_admin_delete, 1);
+      const service = permissionService(upgraded.db, Date.now);
+      const member = { id: 'old-member', username: 'old-member', role: 'member' as const };
+      assert.equal(service.role(member, 'old-project'), 'editor');
+      assert.equal(service.can(member, 'old-project', 'page.delete'), true);
+      assert.equal(service.can(member, 'old-project', 'version.publish'), false);
+    } finally { upgraded.close(); }
+  }
+});
 
 test('旧版数据库升级页面层级迁移后，保留原页面和完整原型内容', () => {
   mkdirSync('test-results', { recursive: true });

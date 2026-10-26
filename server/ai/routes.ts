@@ -77,7 +77,7 @@ export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthSer
         send({ type: 'text', text: '', reset: true });
       });
       if (controller.signal.aborted) throw Error('已停止，本轮没有修改原型。');
-      if (auth && (!auth.checkLease(request, pageId) || !['admin', 'editor'].includes(auth.role(request.identity!.user, page.projectId) || ''))) throw Error('页面编辑权或项目权限已变化，本轮没有应用。');
+      if (auth && (!auth.checkLease(request, pageId) || !auth.can(request.identity!.user, page.projectId, 'prototype.edit'))) throw Error('页面编辑权或项目权限已变化，本轮没有应用。');
       const latest = db.select().from(documents).where(eq(documents.pageId, pageId)).get();
       if (!latest || canonicalDocument(latest.content) !== canonicalDocument(doc.content)) throw Error('生成期间页面已被更新或删除，本轮没有应用，请重新发送。');
       const message: AiMessage = { id: messageId, role: 'assistant', content: value.reply, status: 'done', provider: generated.provider, createdAt: now + 1 };

@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from './store';
 import type { PrototypeDocument } from '../shared/model';
 import type { PageInfo, ProjectInfo } from '../shared/projects';
-import type { PageLease, ProjectRole } from '../shared/auth';
+import type { PageLease, ProjectRole, Permission } from '../shared/auth';
 
 export type SaveStatus = 'loading' | 'saved' | 'unsaved' | 'saving' | 'error' | 'conflict';
 interface Bootstrap {
   document: PrototypeDocument; revision: number; updatedAt: number;
   page: PageInfo; project: ProjectInfo;
-  projectRole: ProjectRole;
+  projectRole: ProjectRole; permissions: Permission[]; canCreateProject: boolean;
 }
 export const saveLabels: Record<SaveStatus, string> = {
   loading: '正在读取', saved: '已保存', unsaved: '等待保存', saving: '正在保存', error: '保存失败', conflict: '保存冲突',
@@ -26,6 +26,8 @@ export function useDocumentSession() {
   const [projectName, setProjectName] = useState('单页原型探索');
   const [currentPageId, setCurrentPageId] = useState('');
   const [currentProjectId, setCurrentProjectId] = useState('');
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [canCreateProject, setCanCreateProject] = useState(false);
   const [projectRole, setProjectRole] = useState<ProjectRole>('viewer');
   const [lease, setLease] = useState<PageLease>({ owned: false });
   const [leaseError, setLeaseError] = useState('');
@@ -220,7 +222,7 @@ export function useDocumentSession() {
       setPageName(data.page.name); setProjectName(data.project.name);
       setCurrentPageId(data.page.id); setCurrentProjectId(data.project.id);
       roleRef.current = data.projectRole; aiRuns.current = 0; lastEdit.current = Date.now();
-      setProjectRole(data.projectRole); updateLease(leaseData.lease); setLeaseError('');
+      setPermissions(data.permissions); setCanCreateProject(data.canCreateProject); setProjectRole(data.projectRole); updateLease(leaseData.lease); setLeaseError('');
       try { localStorage.setItem('forma:last-page', data.page.id); } catch {}
       setServer('ready'); setSaveStatus(keepLocal ? 'unsaved' : 'saved');
       return true;
@@ -281,6 +283,28 @@ export function useDocumentSession() {
     const data: Bootstrap = await response.json();
     if (active.current && pageId.current === id && data.page.id === id) { setPageName(data.page.name); setProjectName(data.project.name); }
   }, []);
+  useEffect(() => {
+    if (!currentProjectId || server !== 'ready') return;
+    let disposed = false;
+    const refreshPermissions = async () => {
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(currentProjectId)}/permissions`);
+        if (disposed) return;
+        if (response.status === 403) { setPermissions([]); roleRef.current = 'viewer'; setProjectRole('viewer'); updateLease({ owned: false }); setLeaseError('项目访问权限已撤销，请切换到其他项目'); return; }
+        if (!response.ok) return;
+        const result = await response.json();
+        if (disposed) return;
+        setPermissions(result.permissions); setCanCreateProject(result.canCreateProject);
+        const coarse = result.role?.id === 'admin' ? 'admin' : result.permissions.includes('prototype.edit') ? 'editor' : 'viewer';
+        roleRef.current = coarse; setProjectRole(coarse);
+        updateLease(coarse === 'viewer' ? { owned: false } : leaseRef.current);
+      } catch { /* The next heartbeat retries; saves remain authorized on the server. */ }
+    };
+    const refresh = () => { void refreshPermissions(); };
+    window.addEventListener('forma:permissions-changed', refresh);
+    const timer = setInterval(refresh, 15000);
+    return () => { disposed = true; clearInterval(timer); window.removeEventListener('forma:permissions-changed', refresh); };
+  }, [currentProjectId, server]);
   const reload = useCallback(async () => { await inFlight.current; await load(false); }, [load]);
   async function beginAi() {
     const stamp = generation.current;
@@ -343,6 +367,6 @@ export function useDocumentSession() {
     window.addEventListener('beforeunload', beforeUnload); window.addEventListener('online', online);
     return () => { window.removeEventListener('beforeunload', beforeUnload); window.removeEventListener('online', online); };
   }, [retry]);
-  return { server, saveStatus, saveError, pageName, projectName, currentPageId, currentProjectId, projectRole, canEdit: server === 'ready' && projectRole !== 'viewer' && (!lease.username || lease.owned), lease, leaseError, canvasEpoch, beginAi, retry, flush, reload, switchPage, refreshMetadata };
+  return { server, saveStatus, saveError, pageName, projectName, currentPageId, currentProjectId, projectRole, permissions, can: (permission: Permission) => permissions.includes(permission), canCreateProject, canEdit: server === 'ready' && projectRole !== 'viewer' && (!lease.username || lease.owned), lease, leaseError, canvasEpoch, beginAi, retry, flush, reload, switchPage, refreshMetadata };
 }
 export type DocumentSession = ReturnType<typeof useDocumentSession>;

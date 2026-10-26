@@ -4,22 +4,24 @@ import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppDatabase } from './db/index.js';
 import { users, sessions, projects, projectMembers, pages, pageLeases } from './db/schema.js';
-import type { AuthUser, ProjectRole } from '../shared/auth.js';
+import type { AuthUser } from '../shared/auth.js';
+import { permissionService, registerPermissionRoutes } from './permissions.js';
 
 declare module 'fastify' { interface FastifyRequest { identity: { user: AuthUser; sessionHash: string } | null } }
 const username = z.string().trim().min(2).max(32).regex(/^[\p{L}\p{N}_.-]+$/u).transform(value => value.toLowerCase());
 const credentials = z.object({ username, password: z.string().min(8).max(128) });
 const clientId = z.string().uuid();
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
-const safeUser = (user: typeof users.$inferSelect): AuthUser => ({ id: user.id, username: user.username, role: user.role });
+const safeUser = (user: typeof users.$inferSelect): AuthUser => ({ id: user.id, username: user.username, role: user.role, enabled: user.enabled, canCreateProject: user.canCreateProject, createdAt: user.createdAt });
 const derive = (password: string, salt: string) => new Promise<Buffer>((resolve, reject) => scrypt(password, salt, 64, (error, key) => error ? reject(error) : resolve(key)));
 export async function passwordHash(password: string) { const salt = randomBytes(16).toString('hex'); return salt + ':' + (await derive(password, salt)).toString('hex'); }
 async function verify(password: string, stored: string) { const [salt, encoded] = stored.split(':'); const expected = Buffer.from(encoded, 'hex'); const actual = await derive(password, salt); return expected.length === actual.length && timingSafeEqual(expected, actual); }
 
 export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.now) {
   app.decorateRequest('identity', null);
-  const role = (user: AuthUser, projectId: string): ProjectRole | undefined => user.role === 'admin' && db.select().from(projects).where(eq(projects.id, projectId)).get()
-    ? 'admin' : db.select().from(projectMembers).where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, user.id))).get()?.role;
+  const permissions = permissionService(db, now);
+  const { role, can } = permissions;
+  registerPermissionRoutes(app, db, permissions, now, passwordHash);
   const allowedProjects = (user: AuthUser) => db.select().from(projects).all().filter(project => !!role(user, project.id));
   const fail = (reply: FastifyReply, code: number, message: string) => reply.code(code).send({ message });
   const owns = (request: FastifyRequest, lease: typeof pageLeases.$inferSelect) => lease.sessionHash === request.identity?.sessionHash && lease.clientId === request.headers['x-forma-client-id'];
@@ -56,7 +58,7 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
     if (cookie && /^[A-Za-z0-9_-]{43}$/.test(cookie)) {
       const session = db.select().from(sessions).where(and(eq(sessions.tokenHash, hash(cookie)), gt(sessions.expiresAt, now()))).get();
       const user = session && db.select().from(users).where(eq(users.id, session.userId)).get();
-      if (session && user) request.identity = { user: safeUser(user), sessionHash: session.tokenHash };
+      if (session && user?.enabled) request.identity = { user: safeUser(user), sessionHash: session.tokenHash };
     }
     if (['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup'].includes(path)) return;
     if (!request.identity) return fail(reply, 401, '请先登录');
@@ -66,7 +68,11 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/') || ['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup'].includes(path)) return;
     if (!request.identity || !db.select().from(sessions).where(and(eq(sessions.tokenHash, request.identity.sessionHash), gt(sessions.expiresAt, now()))).get()) return fail(reply, 401, '请先登录');
+    const freshUser = db.select().from(users).where(eq(users.id, request.identity.user.id)).get();
+    if (!freshUser?.enabled) return fail(reply, 401, '账号已停用');
+    request.identity.user = safeUser(freshUser);
     const user = request.identity.user;
+    if (request.method === 'POST' && (path === '/api/projects' || path.endsWith('/copy')) && user.role !== 'admin' && !user.canCreateProject) return fail(reply, 403, '此账号没有创建项目权限');
     const params = (request.params || {}) as { projectId?: string; pageId?: string };
     let projectId = params.projectId;
     if (params.pageId) {
@@ -77,9 +83,13 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
       const access = role(user, projectId);
       if (!access) return fail(reply, 403, '没有此项目的访问权限');
       if (!['GET', 'HEAD'].includes(request.method)) {
-        if (access === 'viewer') return fail(reply, 403, '此项目为只读权限');
-        if (path.includes('/versions') && !path.endsWith('/copy') && access !== 'admin') return fail(reply, 403, '确认和删除迭代版本需要项目管理员权限');
-        if ((path === `/api/projects/${projectId}` || path.endsWith('/members') || path.includes('/members/')) && access !== 'admin') return fail(reply, 403, '需要项目管理员权限');
+        const required = path.includes('/members') || path.includes('/roles') || path.endsWith('/owner') ? 'member.manage'
+          : path.includes('/sketch') ? 'sketch.import'
+          : path.includes('/versions') ? path.endsWith('/copy') ? 'version.copy' : request.method === 'DELETE' ? 'version.delete' : 'version.publish'
+          : path === `/api/projects/${projectId}` ? request.method === 'DELETE' ? 'project.delete' : 'project.update'
+          : path.endsWith('/document') || path.includes('/ai/') || path.endsWith('/lease') ? 'prototype.edit'
+          : request.method === 'DELETE' ? 'page.delete' : 'page.manage';
+        if (!can(user, projectId, required)) return fail(reply, 403, required === 'project.delete' && access === 'admin' ? '仅项目所有者或系统管理员可删除此项目' : '没有此操作权限，请联系项目管理员');
         if (params.pageId && !path.endsWith('/lease') && !path.endsWith('/duplicate')) {
           const lease = leaseInfo(request, params.pageId);
           const needsLease = path.endsWith('/document') || path.includes('/ai/');
@@ -106,7 +116,7 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
     const encoded = await passwordHash(input.data.password);
     const user = db.transaction(tx => {
       if (tx.select({ id: users.id }).from(users).limit(1).get()) return null;
-      const user = { id: randomUUID(), username: input.data.username, passwordHash: encoded, role: 'admin' as const, createdAt: now() };
+      const user = { id: randomUUID(), username: input.data.username, passwordHash: encoded, role: 'admin' as const, enabled: true, canCreateProject: true, createdAt: now() };
       tx.insert(users).values(user).run();
       tx.update(projects).set({ ownerId: user.id }).where(isNull(projects.ownerId)).run();
       for (const project of tx.select().from(projects).all()) tx.insert(projectMembers).values({ projectId: project.id, userId: user.id, role: 'admin' }).onConflictDoNothing().run();
@@ -122,8 +132,10 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
     const user = db.select().from(users).where(eq(users.username, input.data.username)).get();
     // Hash even when the account is absent to avoid a cheap account-existence timing signal.
     const valid = user ? await verify(input.data.password, user.passwordHash) : (await derive(input.data.password, 'forma-missing-account'), false);
-    if (!user || !valid) return fail(reply, 401, '用户名或密码不正确');
-    attempts.delete(request.ip); return startSession(safeUser(user), request, reply);
+    if (!user?.enabled || !valid) return fail(reply, 401, '用户名或密码不正确');
+    const current = db.select().from(users).where(eq(users.id, user.id)).get();
+    if (!current?.enabled || current.passwordHash !== user.passwordHash) return fail(reply, 401, '账号状态已变化，请重新登录');
+    attempts.delete(request.ip); return startSession(safeUser(current), request, reply);
   });
   app.post('/api/auth/logout', async (request, reply) => {
     db.delete(sessions).where(eq(sessions.tokenHash, request.identity!.sessionHash)).run();
@@ -132,31 +144,45 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
   app.get('/api/users', async (request, reply) => {
     const user = request.identity!.user;
     if (user.role !== 'admin' && !allowedProjects(user).some(p => role(user, p.id) === 'admin')) return fail(reply, 403, '需要管理员权限');
-    return { users: db.select().from(users).all().map(safeUser) };
+    return { users: db.select().from(users).all().map(item => ({ id: item.id, username: item.username, role: item.role, enabled: item.enabled })) };
   });
   app.post('/api/admin/users', async (request, reply) => {
     if (request.identity!.user.role !== 'admin') return fail(reply, 403, '需要系统管理员权限');
     const input = credentials.safeParse(request.body);
     if (!input.success) return fail(reply, 400, '用户名需 2–32 位，密码需 8–128 位');
     const encoded = await passwordHash(input.data.password);
+    const actorSession = db.select().from(sessions).where(and(eq(sessions.tokenHash, request.identity!.sessionHash), gt(sessions.expiresAt, now()))).get();
+    const actor = db.select().from(users).where(eq(users.id, request.identity!.user.id)).get();
+    if (!actorSession || !actor?.enabled || actor.role !== 'admin') return fail(reply, 401, '请重新登录');
     try {
-      const user = { id: randomUUID(), username: input.data.username, passwordHash: encoded, role: 'member' as const, createdAt: now() };
-      db.insert(users).values(user).run(); return { user: safeUser(user) };
+      const user = { id: randomUUID(), username: input.data.username, passwordHash: encoded, role: 'member' as const, enabled: true, canCreateProject: true, createdAt: now() };
+      db.transaction(() => { db.insert(users).values(user).run(); permissions.audit(request, null, '创建账号', user.username, { role: 'member' }); }); return { user: safeUser(db.select().from(users).where(eq(users.id, user.id)).get()!) };
     } catch (error) { if (db.select().from(users).where(eq(users.username, input.data.username)).get()) return fail(reply, 409, '用户名已存在'); throw error; }
   });
   app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/members', async (request, reply) => {
     if (role(request.identity!.user, request.params.projectId) !== 'admin') return fail(reply, 403, '需要项目管理员权限');
-    return { members: db.select().from(projectMembers).where(eq(projectMembers.projectId, request.params.projectId)).all(), ownerId: db.select().from(projects).where(eq(projects.id, request.params.projectId)).get()?.ownerId };
+    return { members: db.select().from(projectMembers).where(eq(projectMembers.projectId, request.params.projectId)).all().map(member => { const account = db.select().from(users).where(eq(users.id, member.userId)).get(); return { ...member, effectivePermissions: account ? permissions.access(safeUser(account), request.params.projectId)?.permissions || [] : [] }; }), ownerId: db.select().from(projects).where(eq(projects.id, request.params.projectId)).get()?.ownerId };
   });
   app.put<{ Params: { projectId: string; userId: string } }>('/api/projects/:projectId/members/:userId', async (request, reply) => {
-    const input = z.object({ role: z.enum(['admin', 'editor', 'viewer']).nullable() }).safeParse(request.body);
+    const input = z.object({ role: z.string().min(1).max(100).nullable() }).safeParse(request.body);
     if (!input.success) return fail(reply, 400, '项目角色不正确');
     const project = db.select().from(projects).where(eq(projects.id, request.params.projectId)).get()!;
     if (project.ownerId === request.params.userId && input.data.role !== 'admin') return fail(reply, 400, '不能移除或降低项目创建者权限');
     if (!db.select().from(users).where(eq(users.id, request.params.userId)).get()) return fail(reply, 404, '用户不存在');
-    if (input.data.role) db.insert(projectMembers).values({ projectId: project.id, userId: request.params.userId, role: input.data.role }).onConflictDoUpdate({ target: [projectMembers.projectId, projectMembers.userId], set: { role: input.data.role } }).run();
-    else db.delete(projectMembers).where(and(eq(projectMembers.projectId, project.id), eq(projectMembers.userId, request.params.userId))).run();
-    if (input.data.role !== 'admin' && input.data.role !== 'editor') for (const page of db.select().from(pages).where(eq(pages.projectId, project.id)).all()) db.delete(pageLeases).where(and(eq(pageLeases.pageId, page.id), eq(pageLeases.userId, request.params.userId))).run();
+    const selected = input.data.role && permissions.roles(project.id).find(role => role.id === input.data.role);
+    if (input.data.role && !selected) return fail(reply, 400, '项目角色不存在');
+    const target = db.select().from(users).where(eq(users.id, request.params.userId)).get()!;
+    if (selected && !target.enabled) return fail(reply, 400, '请先启用此账号，再添加项目权限');
+    if (target.role === 'admin') return fail(reply, 400, '系统管理员拥有全部项目权限，无需单独授权');
+    const before = db.select().from(projectMembers).where(and(eq(projectMembers.projectId, project.id), eq(projectMembers.userId, target.id))).get();
+    db.transaction(() => {
+      if (selected) {
+        const value = { role: selected.id === 'admin' ? 'admin' as const : selected.permissions.includes('prototype.edit') ? 'editor' as const : 'viewer' as const, customRoleId: ['admin', 'editor', 'viewer'].includes(selected.id) ? null : selected.id };
+        db.insert(projectMembers).values({ projectId: project.id, userId: target.id, ...value }).onConflictDoUpdate({ target: [projectMembers.projectId, projectMembers.userId], set: value }).run();
+      } else db.delete(projectMembers).where(and(eq(projectMembers.projectId, project.id), eq(projectMembers.userId, target.id))).run();
+      if (!selected || !selected.permissions.includes('prototype.edit')) permissions.release(target.id, project.id);
+      permissions.audit(request, project.id, selected ? '分配角色' : '移除成员', target.username, { before: permissions.roles(project.id).find(role => role.id === (before?.customRoleId || before?.role))?.name || null, after: selected ? selected.name : null });
+    });
     return { ok: true };
   });
   app.get<{ Params: { pageId: string } }>('/api/pages/:pageId/lease', async request => ({ lease: leaseInfo(request, request.params.pageId) }));
@@ -182,6 +208,6 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
   function createProject<T extends { project: { id: string } }>(create: () => T, user: AuthUser) {
     return db.transaction(() => { const result = create(); onProjectCreated(result.project.id, user); return result; });
   }
-  return { role, allowedProjects, checkLease, leaseInfo, createProject };
+  return { role, can, access: permissions.access, allowedProjects, checkLease, leaseInfo, createProject };
 }
 export type AuthService = ReturnType<typeof registerAuth>;

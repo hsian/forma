@@ -26,14 +26,22 @@ try {
   assert.equal((await (await page.request.get(`${base}/api/pages/default-page/lease`)).json()).lease.expiresAt, undefined);
   assert.equal((await (await page.request.get(`${base}/api/auth/status`)).json()).user.role, 'admin');
   await button(page, '账号菜单').click(); await page.getByRole('menuitem', { name: '账号与项目权限', exact: true }).click();
-  const dialog = page.getByRole('dialog'); await dialog.getByText('创建成员账号', { exact: true }).waitFor();
-  for (const [username, access] of [['editor', '可编辑'], ['reader', '只读']]) {
-    await dialog.getByRole('textbox', { name: '新成员用户名', exact: true }).fill(username); await dialog.getByLabel('新成员密码', { exact: true }).fill('password-123');
-    await button(page, '创建成员').click(); await page.getByRole('combobox', { name: `${username} 项目权限`, exact: true }).waitFor();
-    await choose(page, `${username} 项目权限`, access); await page.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
+  const dialog = page.locator('.management-modal'); await dialog.getByRole('heading', { name: '项目成员', exact: true }).waitFor();
+  for (const [username, access] of [['editor', '可编辑（兼容）'], ['reader', '只读成员']]) {
+    await dialog.getByRole('button', { name: '系统账号', exact: true }).click();
+    await button(page, '创建账号').click();
+    const create = page.getByRole('dialog', { name: '创建成员账号', exact: true });
+    await create.getByRole('textbox', { name: '新成员用户名', exact: true }).fill(username); await create.getByLabel('新成员密码', { exact: true }).fill('password-123');
+    await button(page, '创建成员').click(); await create.waitFor({ state: 'hidden' });
+    await dialog.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
+    await dialog.getByRole('button', { name: '项目成员', exact: true }).click();
+    await button(page, '添加成员').click();
+    await choose(page, '选择成员账号', username); await choose(page, '新成员项目角色', access);
+    await button(page, '确认加入').click(); await page.getByRole('dialog', { name: '添加项目成员', exact: true }).waitFor({ state: 'hidden' });
+    await dialog.locator('.ant-spin-spinning').waitFor({ state: 'hidden' });
   }
   await page.screenshot({ path: 'test-results/auth-members.png', fullPage: true });
-  await button(page, '完成').click(); await dialog.waitFor({ state: 'hidden' });
+  await dialog.locator('.ant-modal-close').click(); await dialog.waitFor({ state: 'hidden' });
   const editor = await login('editor');
   assert.equal((await (await page.request.get(`${base}/api/pages/default-page/lease`)).json()).lease.expiresAt, undefined, '打开两个窗口都不占用页面');
   await page.locator('.node[data-id="title"]').click();
