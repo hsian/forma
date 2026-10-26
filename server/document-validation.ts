@@ -48,6 +48,7 @@ export const documentSchema = z.object({
   importInfo:z.object({sourceHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),sourcePageId:id.optional(),sourceBoardId:id.optional(),importedAt:z.number().finite().optional(),importedBy:z.string().max(200).optional(),acknowledgedDifferences:z.boolean().optional(),report:z.object({pageName:z.string().max(2000),boardName:z.string().max(2000),elements:z.number().nonnegative(),skippedOutside:z.number().nonnegative(),skippedHidden:z.number().nonnegative(),warnings:z.array(z.object({message:z.string().max(2000),count:z.number().nonnegative()})).max(500),issues:z.array(z.object({code:z.string().max(100),severity:z.enum(['warning','error']),message:z.string().max(2000),layerId:z.string().max(200),layerName:z.string().max(2000)})).max(10000),converterVersion:z.string().max(100),sourceVersion:z.string().max(100)})}).optional(),
   width: dimension, height: dimension, background: color,
   elements: z.array(elementSchema).max(20000),
+  annotations: z.array(z.object({ id, number: z.number().int().min(1).max(1000000000), x: z.number().finite().min(0).max(1), y: z.number().finite().min(0).max(1), title: z.string().max(120), content: z.string().max(5000), dialogId: id.optional() }).strict()).max(500).optional(),
   dialogs: z.array(z.object({ id, title: z.string().max(2000), width: dimension, height: dimension, background: color })).max(2000).optional(),
 }).superRefine((doc, context) => {
   const ids = doc.elements.map(e => e.id);
@@ -55,6 +56,10 @@ export const documentSchema = z.object({
   const dialogs = doc.dialogs || [];
   const dialogIds = new Set(dialogs.map(dialog => dialog.id));
   if (dialogIds.size !== dialogs.length) context.addIssue({ code: 'custom', message: '弹窗 ID 必须唯一', path: ['dialogs'] });
+  const annotations = doc.annotations || [];
+  if (new Set(annotations.map(note => note.id)).size !== annotations.length) context.addIssue({ code: 'custom', message: '标注 ID 必须唯一', path: ['annotations'] });
+  if (new Set(annotations.map(note => note.number)).size !== annotations.length) context.addIssue({ code: 'custom', message: '标注编号必须唯一', path: ['annotations'] });
+  annotations.forEach((note, index) => { if (note.dialogId && !dialogIds.has(note.dialogId)) context.addIssue({ code: 'custom', message: '标注所属弹窗不存在', path: ['annotations', index, 'dialogId'] }); });
   doc.elements.forEach((e, index) => {
     for (const issue of componentIssues(e.kind, e.component || {})) context.addIssue({ code: 'custom', message: issue.message, path: ['elements', index, 'component', issue.key] });
     if (e.parentId && !dialogIds.has(e.parentId)) context.addIssue({ code: 'custom', message: '元素所属弹窗不存在', path: ['elements', index, 'parentId'] });

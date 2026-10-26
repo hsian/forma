@@ -39,7 +39,9 @@ export interface PrototypeElement {
   source?: { layerId: string; groups: { id: string; name: string }[] };
 }
 export interface PrototypeDialog { id: string; title: string; width: number; height: number; background: string }
-export interface PrototypeDocument { importInfo?: { report: SketchImportReport; sourceHash?:string; sourcePageId?:string; sourceBoardId?:string; importedAt?:number; importedBy?:string; acknowledgedDifferences?:boolean }; width: number; height: number; background: string; elements: PrototypeElement[]; dialogs?: PrototypeDialog[] }
+/** Coordinates are relative to the page or dialog, so pins follow canvas resizing. */
+export interface PrototypeAnnotation { id: string; number: number; x: number; y: number; title: string; content: string; dialogId?: string }
+export interface PrototypeDocument { importInfo?: { report: SketchImportReport; sourceHash?:string; sourcePageId?:string; sourceBoardId?:string; importedAt?:number; importedBy?:string; acknowledgedDifferences?:boolean }; width: number; height: number; background: string; elements: PrototypeElement[]; dialogs?: PrototypeDialog[]; annotations?: PrototypeAnnotation[] }
 export const kindNames = { rectangle: '矩形', ellipse: '椭圆', text: '文本', line: '直线', vector: '矢量图形', ...Object.fromEntries(antdKinds.map(kind => [kind, antdCatalog[kind].label])) } as Record<ElementKind, string>;
 export function makeSelectConfig(labels = ['选项一', '选项二']): SelectConfig {
   return { options: labels.map(label => ({ id: crypto.randomUUID(), label })), defaultValues: [], multiple: false, allowClear: true, disabled: false };
