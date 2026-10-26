@@ -1,3 +1,6 @@
+import { RichText } from './RichText';
+import { DrawingView } from './DrawingView';
+import { roundedRectanglePath, vectorRectangleRadii } from '../shared/vector';
 import { Button, Input, Select, Switch, Table, Tag } from 'antd';
 import { getSelectConfig, type PrototypeElement, type TableRowAction } from '../shared/model';
 import { tableRows, tableColumns, rowActions, rowText, type RuntimeValue, type RuntimeValues } from '../shared/runtime';
@@ -11,13 +14,21 @@ const members = [
   { key: '3', name: '周予', email: 'zhou.yu@example.com', role: '编辑者', status: '正常', date: '2026-10-18' },
   { key: '4', name: '许安', email: 'xu.an@example.com', role: '访客', status: '停用', date: '2026-10-16' },
 ];
-export function ElementView({ element: e, preview = false, activate, value, onChange, values = {}, applied = {}, notify, onRowAction }: { element: PrototypeElement; preview?: boolean; activate?: (e: PrototypeElement) => void; value?: RuntimeValue; onChange?: (value: RuntimeValue) => void; values?: RuntimeValues; applied?: RuntimeValues; notify?: (text: string) => void; onRowAction?: (table: PrototypeElement, action: TableRowAction, rowIndex: number) => void }) {
+function ElementBody({ element: e, preview = false, activate, value, onChange, values = {}, applied = {}, notify, onRowAction }: { element: PrototypeElement; preview?: boolean; activate?: (e: PrototypeElement) => void; value?: RuntimeValue; onChange?: (value: RuntimeValue) => void; values?: RuntimeValues; applied?: RuntimeValues; notify?: (text: string) => void; onRowAction?: (table: PrototypeElement, action: TableRowAction, rowIndex: number) => void }) {
   const common = { width: '100%', height: '100%', fontSize: e.fontSize, color: e.color, borderRadius: e.radius };
   const config = componentConfig(e.kind, e.component);
+  if(e.drawing && ['rectangle','ellipse','vector'].includes(e.kind)) return <DrawingView element={e}/>;
   switch (e.kind) {
     case 'rectangle': case 'ellipse': return <div style={{ ...common, background: e.fill, border: `${e.strokeWidth}px solid ${e.stroke}`, borderRadius: e.kind === 'ellipse' ? '50%' : e.radius }} />;
-    case 'line': return <svg width="100%" height="100%" style={{ overflow: 'visible' }}><line x1="0" y1="50%" x2="100%" y2="50%" stroke={e.stroke} strokeWidth={Math.max(1, e.strokeWidth)} /></svg>;
-    case 'text': return <div className="text-content" style={{ ...common, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{e.text}</div>;
+    case 'vector': return e.vector ? <svg width="100%" height="100%" viewBox={` 0 0 ${e.vector.viewWidth} ${e.vector.viewHeight}`} preserveAspectRatio="none" style={{ display: 'block', overflow: 'visible' }}><path d={vectorRectangleRadii(e) ? roundedRectanglePath(e.vector.viewWidth,e.vector.viewHeight,vectorRectangleRadii(e)!) : e.vector.path} fill={e.vector.fillEnabled ? e.fill : 'none'} fillOpacity={e.vector.fillOpacity} fillRule={e.vector.fillRule} stroke={e.strokeWidth ? e.stroke : 'none'} strokeWidth={e.strokeWidth} strokeOpacity={e.vector.strokeOpacity}/></svg> : null;
+    case 'line': return <svg width="100%" height="100%" style={{ display: 'block', overflow: 'visible' }}><line x1="0" y1="50%" x2="100%" y2="50%" stroke={e.stroke} strokeWidth={Math.max(1, e.strokeWidth)} /></svg>;
+    case 'text': {
+      if (!e.typography) return <div className="text-content" style={{ ...common, whiteSpace:'pre-wrap', overflowWrap:'anywhere' }}>{e.text}</div>;
+      const t=e.typography;
+      // Legacy imports also benefit without reimporting or changing stored text.
+      const singleLine=t.wrap ? t.wrap==='nowrap' : !/[\r\n]/.test(e.text) && e.height<=e.fontSize*1.8;
+      return <div className="imported-text" style={{ ...common, display:'flex', flexDirection:'column', justifyContent:t.verticalAlign==='middle'?'center':t.verticalAlign==='bottom'?'flex-end':'flex-start', overflow:'visible' }}><div className="text-content" style={{ display:'block', flexShrink:0, width:'100%', height:'auto', whiteSpace:singleLine?'pre':'pre-wrap', overflowWrap:'normal', wordBreak:'normal', fontFamily:t.fontFamily, fontWeight:t.fontWeight, fontStyle:t.fontStyle, fontSynthesis:'weight style', letterSpacing:t.letterSpacing ?? 0, textAlign:t.align, lineHeight:`${t.wrap ? t.lineHeight : singleLine ? e.height : t.lineHeight}px` }}><RichText element={e}/></div></div>;
+    }
     case 'button': {
       const plain = config.type === 'text' || config.type === 'link';
       return <Button type={config.type as 'default'} disabled={config.disabled === true} loading={config.loading === true} danger={config.danger === true} size={config.size as 'middle' | undefined} style={{ ...common, background: plain ? 'transparent' : config.danger ? '#ff4d4f' : e.fill, color: plain ? config.danger ? '#ff4d4f' : e.fill : e.color, borderColor: plain ? 'transparent' : e.strokeWidth ? e.stroke : 'transparent', borderWidth: plain ? 0 : e.strokeWidth, borderStyle: config.type === 'dashed' ? 'dashed' : undefined }} onClick={event => { event.stopPropagation(); activate?.(e); }}>{e.text}</Button>;
@@ -51,4 +62,10 @@ export function ElementView({ element: e, preview = false, activate, value, onCh
     ]} /></div>;
     default: return <AntdElement key={JSON.stringify(e.component)} element={e} preview={preview} value={value} onChange={onChange} activate={activate} notify={notify}/>;
   }
+}
+
+export function ElementView(props:Parameters<typeof ElementBody>[0]) {
+ let node=<ElementBody {...props}/>;
+ for(const [index,path] of (props.element.clipPaths||[]).entries())node=<div key={index} style={{width:'100%',height:'100%',clipPath:`path(${props.element.clipRules?.[index]||'nonzero'}, "${path}")`}}>{node}</div>;
+ return node;
 }

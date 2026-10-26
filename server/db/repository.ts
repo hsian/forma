@@ -93,6 +93,17 @@ export function createRepository(db: AppDatabase) {
       return page;
     });
   }
+  function importPage(projectId: string, baseName: string, document: PrototypeDocument) {
+    return db.transaction(tx => {
+      const names = new Set(listPages(projectId).map(p => p.name));
+      const base = baseName.trim().slice(0, 110) || 'Sketch 导入';
+      let name = base, suffix = 2;
+      while (names.has(name)) name = `${base} (${suffix++})`;
+      const page = createPage(projectId, name);
+      tx.update(documents).set({ content: document }).where(eq(documents.pageId, page.id)).run();
+      return page;
+    });
+  }
   function updatePage(id: string, changes: { name?: string; parentId?: string | null; order?: 'up' | 'down' }) {
     return db.transaction(tx => {
       const page = tx.select().from(pages).where(eq(pages.id, id)).get();
@@ -158,6 +169,6 @@ export function createRepository(db: AppDatabase) {
   }
   return {
     ...createVersionRepository(db), initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
-    createProject, renameProject, deleteProject, createPage, updatePage, duplicatePage, deletePage,
+    createProject, renameProject, deleteProject, createPage, importPage, updatePage, duplicatePage, deletePage,
   };
 }

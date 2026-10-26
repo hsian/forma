@@ -5,7 +5,7 @@ import type { PrototypeDocument, PrototypeElement, TableRowAction } from '../sha
 import { initialValues, isFormControl, matches, rowText, rowDraft, updateMockRow, type RowContext, type RuntimeValue, type RuntimeValues } from '../shared/runtime';
 
 function elementStyle(e: PrototypeElement): CSSProperties {
-  return { position: 'absolute', left: e.x, top: e.y, width: e.width, height: e.height, transform: `rotate(${e.rotation}deg)`, opacity: e.opacity };
+  return { position: 'absolute', left: e.x, top: e.y, width: e.width, height: e.height, transform: `${e.importTransform ? `matrix(${e.importTransform.join(',')},0,0) ` : ''}rotate(${e.rotation}deg)`, opacity: e.opacity };
 }
 export function PrototypePlayer({ doc, initialDialogId }: { doc: PrototypeDocument; initialDialogId?: string }) {
   const { message } = App.useApp();
@@ -80,7 +80,7 @@ export function PrototypePlayer({ doc, initialDialogId }: { doc: PrototypeDocume
   }
   function node(e: PrototypeElement, inDialog = false) {
     const display = { ...e, text: inDialog ? rowText(e.text, rowContext?.row) : e.text, ...(e.table && mockRows[e.id] ? { table: { ...e.table, rows: mockRows[e.id] } } : {}) };
-    return <div key={e.id} data-preview-id={e.id} style={{ ...elementStyle(e), cursor: e.action !== 'none' ? 'pointer' : undefined }} onClick={() => { if (['rectangle', 'ellipse', 'text', 'line'].includes(e.kind)) activate(e); }}>
+    return <div key={e.id} data-preview-id={e.id} style={{ ...elementStyle(e), cursor: e.action !== 'none' ? 'pointer' : undefined }} onClick={() => { if (['rectangle', 'ellipse', 'text', 'line', 'vector'].includes(e.kind)) activate(e); }}>
       {inDialog && isFormControl(e) ? <Form.Item name={e.id} rules={[...(e.required ? [{ required: true, message: (e.kind === 'input' ? '请输入' : '请选择') + e.name }] : []), ...(e.inputType === 'email' ? [{ type: 'email' as const, message: '请输入有效邮箱' }] : [])]} style={{ margin: 0, height: '100%' }}><ElementView element={display} preview activate={activate}/></Form.Item> : <ElementView element={display} preview activate={activate} onRowAction={rowAction} value={(inDialog ? draft : values)[e.id]} onChange={value => inDialog ? setDraft(old => ({ ...old, [e.id]: value })) : change(e, value)} values={inDialog ? draft : values} applied={applied[e.id]} notify={text => { void message.info(text); }}/>}
     </div>;
   }

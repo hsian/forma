@@ -70,7 +70,7 @@ export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthSer
     const cancel = () => controller.abort(); reply.raw.once('close', cancel);
     const heartbeat = setInterval(() => send({ type: 'status', text: 'AI 正在处理，可以随时停止' }), 15000);
     try {
-      const prompt = system + '\n\nproperties 对象的准确 JSON Schema（element 用于新增和修改元素，dialog 用于弹窗，page 用于页面；实际 properties 必须序列化为 JSON 字符串）：\n' + JSON.stringify(aiPropertySchemas) + '\n\n上下文JSON：\n' + JSON.stringify({ page: { id: page.id, name: page.name }, selectedIds: input.data.selectedIds.filter(id => doc.content.elements.some(e => e.id === id)), dialogId: input.data.dialogId, document: doc.content, history: past, message: input.data.prompt });
+      const prompt = system + '\n\nproperties 对象的准确 JSON Schema（element 用于新增和修改元素，dialog 用于弹窗，page 用于页面；实际 properties 必须序列化为 JSON 字符串）：\n' + JSON.stringify(aiPropertySchemas) + '\n\n上下文JSON：\n' + JSON.stringify({ page: { id: page.id, name: page.name }, selectedIds: input.data.selectedIds.filter(id => doc.content.elements.some(e => e.id === id)), dialogId: input.data.dialogId, document: { ...doc.content, importInfo: undefined }, history: past, message: input.data.prompt });
       const { generated, value, result } = await generateValidated(doc.content, prompt, controller.signal, text => send({ type: 'status', text }), text => send({ type: 'text', text }), details => {
         // Retain field paths and validation codes, never the prompt or raw model output.
         app.log.warn({ pageId, validation: details.map(({ path, code }) => ({ path, code })) }, 'AI result validation failed; retrying once');

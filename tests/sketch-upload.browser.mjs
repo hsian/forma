@@ -1,0 +1,61 @@
+import {authenticatedPage} from './browser-auth.mjs';
+import {createRequire} from 'node:module';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+import {sketchFixture} from './fixtures/sketch.mjs';
+const require=createRequire(process.env.PLAYWRIGHT_MODULE_ROOT?resolve(process.env.PLAYWRIGHT_MODULE_ROOT,'package.json'):import.meta.url);
+const {chromium}=require('playwright');
+if(!process.env.TEST_URL)throw Error('必须使用隔离数据库');
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH});
+const page=await authenticatedPage(browser,{viewport:{width:1600,height:1000}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try {
+  await page.goto(process.env.TEST_URL);await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.locator('.node[data-id="title"]').click();
+  await page.getByRole('textbox',{name:'文字内容',exact:true}).fill('原页面内容保留');
+  async function openImport(){await page.getByRole('button',{name:'项目操作',exact:true}).click();await page.getByRole('menuitem',{name:'导入 Sketch',exact:true}).click();}
+  await openImport();
+  await page.getByLabel('Sketch 文件',{exact:true}).setInputFiles({name:'错误.sketch',mimeType:'application/octet-stream',buffer:Buffer.from('not zip')});
+  await page.getByRole('alert').getByText(/无法读取 Sketch 文件/).waitFor();
+  assert.equal((await (await page.request.get(`${process.env.TEST_URL}/api/projects/default-project/pages`)).json()).pages.length,1);
+  await page.getByLabel('Sketch 文件',{exact:true}).setInputFiles({name:'示例.sketch',mimeType:'application/octet-stream',buffer:sketchFixture()});
+  const create=page.getByRole('button',{name:'导入并新建页面',exact:true});await create.waitFor();
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='导入并新建页面'&&!b.disabled));
+  await page.screenshot({path:'test-results/sketch-import-dialog.png',animations:'disabled'});
+  await create.click();
+  await page.getByRole('dialog').waitFor({state:'hidden'});
+  await page.locator('.node').getByText('导入的设计文字',{exact:true}).waitFor();
+  await page.locator('.prototype-page-tree').getByText('导入示例',{exact:true}).waitFor();
+  const list=(await (await page.request.get(`${process.env.TEST_URL}/api/projects/default-project/pages`)).json()).pages;
+  assert.equal(list.length,2);
+  const original=(await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json()).document;
+  assert.equal(original.elements.find(e=>e.id==='title').text,'原页面内容保留');
+  await page.reload();await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.locator('.node').getByText('导入的设计文字',{exact:true}).waitFor();
+  await openImport();await page.getByLabel('Sketch 文件',{exact:true}).setInputFiles({name:'示例.sketch',mimeType:'application/octet-stream',buffer:sketchFixture()});
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='导入并新建页面'&&!b.disabled));
+  await create.click();await page.getByRole('dialog').waitFor({state:'hidden'});
+  await page.locator('.prototype-page-tree').getByText('导入示例 (2)',{exact:true}).waitFor();
+  await page.locator('.node').getByText('导入的设计文字',{exact:true}).waitFor();
+  await page.screenshot({path:'test-results/sketch-import-created.png',animations:'disabled'});
+  await openImport();await page.getByLabel('Sketch 文件',{exact:true}).setInputFiles({name:'有差异.sketch',mimeType:'application/octet-stream',buffer:sketchFixture([{_class:'rectangle',do_objectID:'pattern',name:'图案按钮',frame:{x:0,y:0,width:100,height:40},style:{corners:{radii:[6]},fills:[{isEnabled:true,fillType:4}]}}])});
+  const acknowledge=page.getByRole('checkbox',{name:'已了解报告中的差异，按当前效果导入',exact:true});await acknowledge.waitFor();assert.equal(await create.isDisabled(),true);await acknowledge.check();await create.click();await page.getByRole('dialog').waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'页面操作 导入示例 (3)',exact:true}).click();await page.getByRole('menuitem',{name:'查看导入报告',exact:true}).click();
+  const reportDialog=page.getByRole('dialog');await reportDialog.getByText('查看具体图层和处理说明',{exact:true}).click();await reportDialog.getByText('图案按钮',{exact:true}).waitFor();await reportDialog.screenshot({path:'test-results/sketch-persisted-report.png',animations:'disabled'});await reportDialog.getByRole('button').last().click();await reportDialog.waitFor({state:'hidden'});
+  if(process.env.SKETCH_TEST_FILE) {
+    await openImport();await page.getByLabel('Sketch 文件',{exact:true}).setInputFiles(process.env.SKETCH_TEST_FILE);
+    await page.waitForFunction(()=>{const input=document.querySelector('input[aria-label="导入画板"]');return input&&!input.disabled;},{},{timeout:90000});
+    await page.locator('.ant-select').filter({has:page.getByRole('combobox',{name:'导入画板',exact:true})}).click();
+    await page.getByRole('combobox',{name:'导入画板',exact:true}).fill('凭证模板-鼠标移上去到编辑按钮的状态');
+    await page.locator('.ant-select-item-option').filter({hasText:'凭证模板 / 凭证模板-鼠标移上去到编辑按钮的状态'}).click();
+    await page.waitForFunction(()=>{const input=document.querySelector('input[aria-label="导入画板"]');return input&&!input.disabled;},{},{timeout:90000});
+    const acknowledgment=page.getByRole('checkbox',{name:'已了解报告中的差异，按当前效果导入',exact:true});if(await acknowledgment.count())await acknowledgment.check();
+    await create.click();await page.getByRole('dialog').waitFor({state:'hidden',timeout:60000});
+    await page.locator('.node').getByText('记账凭证',{exact:true}).waitFor();
+    assert.ok(await page.locator('.node').count()>200);
+    await page.screenshot({path:'test-results/sketch-real-import-created.png',animations:'disabled'});
+    console.log('PASS: 实际 45MB Sketch 上传、按画板 ID 转换并打开新页面。');
+  }
+  assert.deepEqual(errors,[]);
+  console.log('PASS: 项目菜单上传 Sketch、错误文件提示、选择画板、新页面自动打开、原页面保留、刷新恢复和同名追加。');
+}finally{await browser.close();}

@@ -1,3 +1,4 @@
+import { registerSketchApi } from './sketch/routes.js';
 import type { FastifyInstance } from 'fastify';
 import { createRepository, ManagementError } from './db/repository.js';
 import { saveDocumentSchema } from './document-validation.js';
@@ -6,6 +7,7 @@ import type { AuthService } from './auth.js';
 import { VersionError } from './db/versions.js';
 
 export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService) {
+  registerSketchApi(app, repository);
   app.get('/api/health', async () => ({ status: 'ok', storage: 'sqlite', app: 'Forma' }));
   app.get<{ Querystring: { pageId?: string } }>('/api/bootstrap', async (request, reply) => {
     if (!auth) return repository.bootstrap(request.query.pageId);

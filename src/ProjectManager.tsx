@@ -1,8 +1,12 @@
+import {ImportReport} from './ImportReport';
+import type {PrototypeDocument} from '../shared/model';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { App, Button, Dropdown, Input, Modal, Select, Spin, Tree } from 'antd';
+import { App, Button, Dropdown, Input, Modal, Select, Spin, Tree, type MenuProps } from 'antd';
 import { FileOutlined, MoreOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import type { ProjectInfo, PageInfo } from '../shared/projects';
+import { SketchImport } from './SketchImport';
+import type { SketchBoard } from './SketchImport';
 import type { DocumentSession } from './useDocumentSession';
 
 async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -39,6 +43,7 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
   const refreshGeneration = useRef(0);
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [nameValue, setNameValue] = useState('');
+  const [sketchOpen, setSketchOpen] = useState(false);
   const [movePage, setMovePage] = useState<PageInfo | null>(null);
   const [moveParent, setMoveParent] = useState('__root__');
   async function refresh(projectId = session.currentProjectId) {
@@ -88,7 +93,17 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     });
     if (success) setNameRequest(null);
   }
+  async function importSketch(token: string, board: SketchBoard, acceptWarnings:boolean) {
+    return run(async () => {
+      const result=await api<{page:PageInfo;report:{elements:number;warnings:{message:string;count:number}[]}}>(`/api/projects/${encodeURIComponent(session.currentProjectId)}/sketch/${encodeURIComponent(token)}/import`,'POST',{pageId:board.pageId,boardId:board.boardId,acceptWarnings});
+      setSketchOpen(false);
+      await refresh();
+      void message.success(`已生成新页面「${result.page.name}」，共 ${result.report.elements} 个元素${result.report.warnings.length ? '，部分设计效果已简化' : ''}`);
+      await openPage(result.page.id);
+    });
+  }
   function projectAction(key: string) {
+    if (key === 'sketch' && session.projectRole !== 'viewer') setSketchOpen(true);
     if (key === 'rename') requestName({ kind: 'rename-project', targetId: session.currentProjectId }, session.projectName);
     if (key === 'delete') modal.confirm({
       title: `删除项目「${session.projectName}」？`, content: '项目内的所有页面、子页面和原型内容都会删除。', okText: '删除项目', cancelText: '取消', okButtonProps: { danger: true },
@@ -99,6 +114,10 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     });
   }
   function pageAction(key: string, page: PageInfo) {
+    if(key==='import-report')void run(async()=>{
+      const result=await api<{document:PrototypeDocument}>(`/api/pages/${encodeURIComponent(page.id)}/document`);
+      modal.info({title:'页面导入报告',width:640,content:result.document.importInfo?<ImportReport report={result.document.importInfo.report}/>:<p>此页面没有导入报告记录。</p>});
+    });
     if (key === 'child') requestName({ kind: 'new-page', parentId: page.id });
     if (key === 'rename') requestName({ kind: 'rename-page', targetId: page.id }, page.name);
     if (key === 'move') { setMovePage(page); setMoveParent(page.parentId || '__root__'); }
@@ -128,6 +147,7 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     selectPage: id => { void run(() => openPage(id)); },
     refresh: () => { void run(() => refresh()); },
   }}>{children}
+    {sketchOpen && <SketchImport key={session.currentProjectId} projectId={session.currentProjectId} busy={busy} onCancel={()=>setSketchOpen(false)} onImport={importSketch}/>}
     <Modal open={!!nameRequest} title={nameRequest?.kind === 'new-project' ? '新建项目' : nameRequest?.kind === 'rename-project' ? '重命名项目' : nameRequest?.kind === 'new-page' ? nameRequest.parentId ? '新建子页面' : '新建页面' : '重命名页面'} okText="确定" cancelText="取消" confirmLoading={busy} onOk={() => { void submitName(); }} onCancel={() => { if (!busy) setNameRequest(null); }} destroyOnHidden>
       <label className="stacked-label">{nameRequest?.kind.includes('project') ? '项目名称' : '页面名称'}<Input autoFocus aria-label="管理名称" maxLength={120} placeholder="输入名称" value={nameValue} onChange={event => setNameValue(event.target.value)} onPressEnter={() => { void submitName(); }}/></label>
     </Modal>
@@ -145,7 +165,7 @@ function ProjectSwitcher() {
   const disabled = busy || session.server !== 'ready';
   return <div className="project-switcher"><Select aria-label="当前项目" variant="borderless" showSearch optionFilterProp="label" disabled={disabled} value={session.currentProjectId || undefined} placeholder={session.projectName}
     options={projects.length ? projects.map(project => ({ value: project.id, label: project.name })) : session.currentProjectId ? [{ value: session.currentProjectId, label: session.projectName }] : []} onChange={selectProject}/>
-    <Dropdown trigger={['click']} menu={{ items: [{ key: 'rename', label: '重命名项目', disabled: session.projectRole !== 'admin' }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || session.projectRole !== 'admin' }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
+    <Dropdown trigger={['click']} menu={{ items: [{ key: 'sketch', label: '导入 Sketch', disabled: session.projectRole === 'viewer' }, { type: 'divider' }, { key: 'rename', label: '重命名项目', disabled: session.projectRole !== 'admin' }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || session.projectRole !== 'admin' }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
     <button aria-label="新建项目" title="新建项目" disabled={disabled} onClick={() => name({ kind: 'new-project' })}><PlusOutlined/></button>
   </div>;
 }
@@ -160,10 +180,10 @@ export function PageTree() {
     setExpanded(previous => [...new Set([...previous, ...parents])]);
   }, [pages, session.currentPageId]);
   function nodes(parentId: string | null): DataNode[] {
-    return pages.filter(page => page.parentId === parentId).map(page => ({ key: page.id, icon: <FileOutlined/>, title: <span className="page-tree-title"><span title={page.name}>{page.name}</span><Dropdown trigger={['click']} menu={{ items: [
-      { key: 'child', label: '新建子页面' }, { key: 'rename', label: '重命名页面' }, { key: 'duplicate', label: '复制此页' }, { key: 'move', label: '移动页面' },
+    return pages.filter(page => page.parentId === parentId).map(page => ({ key: page.id, icon: <FileOutlined/>, title: <span className="page-tree-title"><span title={page.name}>{page.name}</span><Dropdown trigger={['click']} menu={{ items: ([
+      { key:'import-report',label:'查看导入报告' }, { type:'divider' }, { key: 'child', label: '新建子页面' }, { key: 'rename', label: '重命名页面' }, { key: 'duplicate', label: '复制此页' }, { key: 'move', label: '移动页面' },
       { type: 'divider' }, { key: 'up', label: '上移' }, { key: 'down', label: '下移' }, { type: 'divider' }, { key: 'delete', label: '删除页面', danger: true },
-    ], onClick: info => { info.domEvent.stopPropagation(); pageAction(info.key, page); } }}><button aria-label={`页面操作 ${page.name}`} disabled={busy || session.projectRole === 'viewer'} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><MoreOutlined/></button></Dropdown></span>, children: nodes(page.id) }));
+    ] as NonNullable<MenuProps['items']>).map(item=>!item || item.type==='divider' || item.key==='import-report'?item:{...item,disabled:session.projectRole==='viewer'}), onClick: info => { info.domEvent.stopPropagation(); pageAction(info.key, page); } }}><button aria-label={`页面操作 ${page.name}`} disabled={busy} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><MoreOutlined/></button></Dropdown></span>, children: nodes(page.id) }));
   }
   return <div className="page-manager"><div className="page-project-controls"><ProjectSwitcher/></div><div className="page-manager-heading"><span>项目页面 <span>{pages.length}</span></span><div><button aria-label="刷新页面列表" title="刷新页面列表" disabled={busy} onClick={refresh}><ReloadOutlined/></button><button aria-label="新建根页面" title="新建页面" disabled={busy || session.projectRole === 'viewer'} onClick={() => name({ kind: 'new-page' })}><PlusOutlined/></button></div></div>
     <Spin spinning={busy}><Tree className="prototype-page-tree" blockNode showIcon showLine={{ showLeafIcon: false }} disabled={busy} treeData={nodes(null)} selectedKeys={[session.currentPageId]} expandedKeys={expanded} onExpand={keys => setExpanded(keys)} onSelect={keys => { if (keys[0] && keys[0] !== session.currentPageId) selectPage(String(keys[0])); }}/></Spin>

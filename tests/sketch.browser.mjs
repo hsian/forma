@@ -1,0 +1,47 @@
+import { authenticatedPage } from './browser-auth.mjs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const require=createRequire(process.env.PLAYWRIGHT_MODULE_ROOT?resolve(process.env.PLAYWRIGHT_MODULE_ROOT,'package.json'):import.meta.url);
+const {chromium}=require('playwright');
+if(!process.env.TEST_URL)throw Error('必须使用隔离数据库');
+const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH});
+const page=await authenticatedPage(browser,{viewport:{width:1800,height:1100}});
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try {
+  const doc=JSON.parse(readFileSync('test-results/sketch-analysis/document.json','utf8'));
+  const response=await page.request.put(`${process.env.TEST_URL}/api/pages/default-page/document`,{data:{revision:0,document:doc}});
+  assert.equal(response.ok(),true,await response.text());
+  await page.goto(process.env.TEST_URL);await page.locator('.studio[data-server-state="ready"]').waitFor();
+  assert.equal(await page.locator('.node').count(),doc.elements.filter(e=>!e.parentId).length);
+  await page.screenshot({path:'test-results/sketch-analysis/editor.png'});
+  const title=doc.elements.find(e=>e.text==='记账凭证');
+  await page.locator(`.node[data-id="${title.id}"]`).click();
+  await page.getByRole('textbox',{name:'文字内容',exact:true}).fill('可编辑的凭证');
+  await page.locator('[data-save-status="saved"]').waitFor();
+  // Imported source groups select real canvas nodes, not a flattened screenshot.
+  const grouped=doc.elements.find(e=>e.kind==='text' && !e.parentId && e.source?.groups.slice(-4).some(g=>doc.elements.filter(other=>other.source?.groups.some(og=>og.id===g.id)).length>1));
+  await page.locator(`.node[data-id="${grouped.id}"]`).click();
+  await page.getByRole('button',{name:/选择分组：/}).first().click();
+  assert.ok(await page.locator('.node-selected').count()>1);
+  await page.keyboard.press('ArrowRight');
+  await page.locator('[data-save-status="saved"]').waitFor();
+  await page.reload();await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.locator(`.node[data-id="${title.id}"]`).getByText('可编辑的凭证',{exact:true}).waitFor();
+  const preview=await page.context().newPage();preview.on('pageerror',e=>errors.push(e.message));
+  await preview.goto(`${process.env.TEST_URL}/preview?projectId=default-project&pageId=default-page`);
+  await preview.locator('.preview-page').waitFor();
+  const trigger=doc.elements.find(e=>e.text==='使用凭证模板');
+  await preview.locator(`[data-preview-id="${trigger.id}"]`).click();
+  await preview.getByRole('dialog').waitFor();
+  await preview.getByRole('dialog').screenshot({path:'test-results/sketch-analysis/dialog-content.png',animations:'disabled'});
+  await preview.screenshot({path:'test-results/sketch-analysis/dialog.png',animations:'disabled'});
+  await preview.getByRole('dialog').getByText('取消',{exact:true}).click();
+  await preview.getByRole('dialog').waitFor({state:'hidden'});
+  await preview.locator(`[data-preview-id="${trigger.id}"]`).click();
+  await preview.getByRole('dialog').getByText('使用',{exact:true}).click();
+  await preview.getByRole('dialog').waitFor({state:'hidden'});
+  assert.deepEqual(errors,[]);
+  console.log('PASS: Sketch 图层编辑、分组选择、保存重载、矢量渲染与模板弹窗打开/取消/使用。');
+} finally {await browser.close();}
