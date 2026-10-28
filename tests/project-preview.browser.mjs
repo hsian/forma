@@ -27,7 +27,7 @@ try {
   await api(`/api/projects/${other.project.id}/pages`, 'POST', { name: '不应出现在当前项目' });
   await api(`/api/pages/${child.id}/document`, 'PUT', { revision: 0, document: seed.document });
   await editor.addInitScript(id => localStorage.setItem('forma:last-page', id), child.id);
-  await editor.goto(base); await editor.locator('.studio[data-server-state="ready"]').waitFor();
+  await editor.goto(`${base}/design`); await editor.locator('.studio[data-server-state="ready"]').waitFor();
   await editor.locator('.current-page-name').filter({ hasText: /^成员详情$/ }).waitFor();
   await editor.locator('.node[data-id="title"]').click();
   await editor.getByRole('textbox', { name: '文字内容', exact: true }).fill('立即预览应显示最新内容');

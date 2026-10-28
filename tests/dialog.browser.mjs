@@ -20,7 +20,7 @@ async function changeNumber(name, value) { await spin(name).fill(String(value));
 async function returnToPage() { await page.locator('.dialog-edit-banner').getByRole('button', { name: '返回页面', exact: true }).click(); }
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.TEST_URL);
+  await page.goto(`${process.env.TEST_URL}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.node[data-id="add"]').click();
   await button('交互').click();

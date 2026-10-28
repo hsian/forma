@@ -201,9 +201,11 @@ export function useDocumentSession() {
     loaded.current = false; blocked.current = null;
     setServer('loading'); setSaveStatus('loading'); setSaveError('');
     try {
-      let targetPageId = requestedPageId || pageId.current;
-      if (!targetPageId) { try { targetPageId = localStorage.getItem('forma:last-page') || ''; } catch {} }
-      const response = await fetch(`/api/bootstrap${targetPageId ? '?pageId=' + encodeURIComponent(targetPageId) : ''}`, { signal: abort.signal });
+      const query = new URLSearchParams(window.location.search); const targetProjectId = !requestedPageId && !pageId.current ? query.get('projectId') : null;
+      let targetPageId = requestedPageId || pageId.current || query.get('pageId') || '';
+      if (!targetPageId) { try { targetPageId = (targetProjectId ? localStorage.getItem(`forma:last-page:${targetProjectId}`) : localStorage.getItem('forma:last-page')) || ''; } catch {} }
+      const parameters = new URLSearchParams(); if (targetPageId) parameters.set('pageId', targetPageId); if (targetProjectId) parameters.set('projectId', targetProjectId);
+      const response = await fetch(`/api/bootstrap?${parameters}`, { signal: abort.signal });
       if (!response.ok) throw Error('读取项目失败，请检查本地服务');
       const data: Bootstrap = await response.json();
       const leaseResponse = await fetch(`/api/pages/${encodeURIComponent(data.page.id)}/lease`, { signal: abort.signal });
@@ -223,7 +225,8 @@ export function useDocumentSession() {
       setCurrentPageId(data.page.id); setCurrentProjectId(data.project.id);
       roleRef.current = data.projectRole; aiRuns.current = 0; lastEdit.current = Date.now();
       setPermissions(data.permissions); setCanCreateProject(data.canCreateProject); setProjectRole(data.projectRole); updateLease(leaseData.lease); setLeaseError('');
-      try { localStorage.setItem('forma:last-page', data.page.id); } catch {}
+      try { localStorage.setItem('forma:last-page', data.page.id); localStorage.setItem(`forma:last-page:${data.project.id}`, data.page.id); } catch {}
+      const url = new URL(window.location.href); url.searchParams.set('projectId', data.project.id); url.searchParams.set('pageId', data.page.id); window.history.replaceState(null, '', url);
       setServer('ready'); setSaveStatus(keepLocal ? 'unsaved' : 'saved');
       return true;
     } catch (error) {

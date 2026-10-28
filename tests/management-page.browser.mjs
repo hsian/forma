@@ -18,7 +18,7 @@ async function chooseProject(name) {
 try {
   const second = (await (await page.request.post(`${base}/api/projects`, { data: { name: '另一个管理项目' } })).json()).project;
   assert.equal((await page.request.get(`${base}/manage`)).status(), 200, '生产环境可以直接访问管理页');
-  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${base}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.node[data-id="title"]').click();
   await page.getByRole('textbox', { name: '文字内容', exact: true }).fill('进入管理中心之前的修改');
   await enterManagement();
@@ -60,7 +60,7 @@ try {
   await manager.reload(); await manager.getByText('你目前没有项目管理权限，请联系项目管理员。', { exact: true }).waitFor();
   assert.equal(await manager.locator('.studio').count(), 0);
   const guest = await browser.newPage(); await guest.goto(`${base}/manage?projectId=${second.id}&section=roles`);
-  await guest.getByRole('heading', { name: '登录工作台', exact: true }).waitFor();
+  await guest.getByRole('heading', { name: '登录 Forma', exact: true }).waitFor();
   await guest.getByRole('textbox', { name: '用户名', exact: true }).fill('qa-admin'); await guest.getByLabel('密码', { exact: true }).fill('qa-password-123');
   await guest.getByRole('button', { name: '登录', exact: true }).click();
   await guest.getByRole('heading', { name: '角色与权限', exact: true }).waitFor();

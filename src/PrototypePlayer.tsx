@@ -9,7 +9,7 @@ import { initialValues, isFormControl, matches, rowText, rowDraft, updateMockRow
 function elementStyle(e: PrototypeElement): CSSProperties {
   return { position: 'absolute', left: e.x, top: e.y, width: e.width, height: e.height, transform: `${e.importTransform ? `matrix(${e.importTransform.join(',')},0,0) ` : ''}rotate(${e.rotation}deg)`, opacity: e.opacity };
 }
-export function PrototypePlayer({ doc, initialDialogId, showAnnotations = false }: { doc: PrototypeDocument; initialDialogId?: string; showAnnotations?: boolean }) {
+export function PrototypePlayer({ doc, initialDialogId, initialAnnotationId, showAnnotations = false }: { doc: PrototypeDocument; initialDialogId?: string; initialAnnotationId?: string; showAnnotations?: boolean }) {
   const { message } = App.useApp();
   const [form] = Form.useForm();
   const [modalId, setModalId] = useState<string | null>(initialDialogId || null);
@@ -87,9 +87,9 @@ export function PrototypePlayer({ doc, initialDialogId, showAnnotations = false 
     </div>;
   }
   return <>
-    <div className="preview-page" style={{ width: doc.width, height: doc.height, background: doc.background }}>{doc.elements.filter(e => !e.parentId && !hidden.has(e.id) && matches(e.visibleWhen, values)).map(e => node(e))}<AnnotationLayer annotations={surfaceAnnotations(doc)} visible={showAnnotations}/></div>
+    <div className="preview-page" style={{ width: doc.width, height: doc.height, background: doc.background }}>{doc.elements.filter(e => !e.parentId && !hidden.has(e.id) && matches(e.visibleWhen, values)).map(e => node(e))}<AnnotationLayer annotations={surfaceAnnotations(doc)} visible={showAnnotations} focusId={initialAnnotationId}/></div>
     <Modal open={!!dialog} title={rowText(dialog?.title || '', rowContext?.row)} width={(dialog?.width || 472) + 48} footer={null} onCancel={closeDialog} destroyOnHidden styles={{ body: { background: dialog?.background } }}>
-      {dialog && <Form key={dialog.id} form={form} initialValues={draft} onValuesChange={changed => setDraft(old => ({ ...old, ...changed }))} preserve={false} component={false}><div className="runtime-dialog-canvas" style={{ width: dialog.width, height: dialog.height, background: dialog.background }}>{doc.elements.filter(e => e.parentId === dialog.id && !hidden.has(e.id) && matches(e.visibleWhen, draft)).map(e => node(e, true))}<AnnotationLayer annotations={surfaceAnnotations(doc, dialog.id)} visible={showAnnotations}/></div></Form>}
+      {dialog && <Form key={dialog.id} form={form} initialValues={draft} onValuesChange={changed => setDraft(old => ({ ...old, ...changed }))} preserve={false} component={false}><div className="runtime-dialog-canvas" style={{ width: dialog.width, height: dialog.height, background: dialog.background }}>{doc.elements.filter(e => e.parentId === dialog.id && !hidden.has(e.id) && matches(e.visibleWhen, draft)).map(e => node(e, true))}<AnnotationLayer annotations={surfaceAnnotations(doc, dialog.id)} visible={showAnnotations} focusId={initialAnnotationId}/></div></Form>}
     </Modal>
   </>;
 }

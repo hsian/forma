@@ -147,6 +147,8 @@ test('项目权限服务端隔离，成员不能提权，只读不能保存或�
     assert.equal((await f.request('GET', '/api/pages/default-page/lease', admin)).json().lease.expiresAt, undefined, '降为只读时立即释放编辑权');
     const own = await f.request('POST', '/api/projects', reader, '', { name: '个人项目' }); assert.equal(own.statusCode, 200);
     assert.equal((await f.request('GET', `/api/bootstrap?pageId=${own.json().page.id}`, reader)).json().projectRole, 'admin');
+    assert.equal((await f.request('GET', `/api/bootstrap?projectId=${own.json().project.id}&pageId=default-page`, reader)).json().project.id, own.json().project.id, '指定项目优先于其他项目的历史页面');
+    assert.equal((await f.request('GET', '/api/bootstrap?projectId=missing&pageId=default-page', reader)).statusCode, 404);
     const adminId = (await f.request('GET', '/api/auth/status', admin)).json().user.id;
     assert.equal((await f.request('PUT', `/api/projects/default-project/members/${adminId}`, admin, '', { role: null })).statusCode, 400);
     assert.equal((await f.request('POST', '/api/projects', admin, '', { name: '恶意来源' }, { origin: 'https://evil.example' })).statusCode, 403);

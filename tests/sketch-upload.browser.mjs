@@ -10,7 +10,7 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.CH
 const page=await authenticatedPage(browser,{viewport:{width:1600,height:1000}});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try {
-  await page.goto(process.env.TEST_URL);await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${process.env.TEST_URL}/design`);await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.node[data-id="title"]').click();
   await page.getByRole('textbox',{name:'文字内容',exact:true}).fill('原页面内容保留');
   async function openImport(){await page.getByRole('button',{name:'项目操作',exact:true}).click();await page.getByRole('menuitem',{name:'导入 Sketch',exact:true}).click();}

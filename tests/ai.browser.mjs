@@ -15,7 +15,7 @@ const document = async () => (await (await page.request.get(`${process.env.TEST_
 async function send(text) { await input().fill(text); await button('发送 AI 修改要求').click(); }
 async function finished() { await button('发送 AI 修改要求').waitFor(); }
 try {
-  await page.goto(process.env.TEST_URL); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${process.env.TEST_URL}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   assert.equal(await page.locator('.ai-panel').isVisible(), false, '默认收起，避免遮挡画布');
   assert.equal(await page.locator('.ai-launcher').count(), 0, '移除底部 AI 按钮');
   await page.keyboard.press('Control+Shift+Backquote');

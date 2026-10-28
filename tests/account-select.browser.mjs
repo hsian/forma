@@ -22,7 +22,7 @@ const checkbox = (id, name) => group(id).getByRole('checkbox', { name, exact: tr
 async function total(value) { if (value) await table().getByText(`共 ${value} 条`, { exact: true }).waitFor(); else await table().locator('.ant-empty-description').waitFor(); }
 async function openView() { await button('☷ 自定义视图').click(); await dialog().waitFor(); }
 try {
-  await page.goto(process.env.TEST_URL);
+  await page.goto(`${process.env.TEST_URL}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.page-tree-title>span').filter({ hasText: /^账套选择$/ }).click();
   await page.locator('.current-page-name').filter({ hasText: /^账套选择$/ }).waitFor();

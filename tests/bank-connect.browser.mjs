@@ -16,7 +16,7 @@ try {
     const endpoint = `${process.env.TEST_URL}/api/pages/default-page/document`;
     const old = await (await page.request.get(endpoint)).json();
     assert.equal((await page.request.put(endpoint, { data: { revision: old.revision, document: bankConnectDocument(convert) } })).status(), 200);
-    await page.goto(process.env.TEST_URL); await page.locator('.studio[data-server-state="ready"]').waitFor();
+    await page.goto(`${process.env.TEST_URL}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
     const preview = await openPreview(page, errors);
     if (!convert) {
       await preview.getByRole('textbox', { name: '交易流水号、对方户名、摘要关键词', exact: true }).fill('工程');

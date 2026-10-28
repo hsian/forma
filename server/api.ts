@@ -9,11 +9,11 @@ import { VersionError } from './db/versions.js';
 export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService) {
   registerSketchApi(app, repository, auth);
   app.get('/api/health', async () => ({ status: 'ok', storage: 'sqlite', app: 'Forma' }));
-  app.get<{ Querystring: { pageId?: string } }>('/api/bootstrap', async (request, reply) => {
+  app.get<{ Querystring: { pageId?: string; projectId?: string } }>('/api/bootstrap', async (request, reply) => {
     if (!auth) return repository.bootstrap(request.query.pageId);
     const user = request.identity!.user;
     const allowed = auth.allowedProjects(user);
-    const available = allowed.flatMap(project => repository.listPages(project.id));
+    const available = allowed.filter(project => !request.query.projectId || project.id === request.query.projectId).flatMap(project => repository.listPages(project.id));
     const page = available.find(page => page.id === request.query.pageId) || available[0];
     if (!page) return reply.code(404).send({ message: '暂无可访问的项目，请创建项目或联系管理员' });
     return { ...repository.bootstrap(page.id), projectRole: auth.role(user, page.projectId), permissions: auth.access(user, page.projectId)?.permissions || [], canCreateProject: user.role === 'admin' || !!user.canCreateProject };

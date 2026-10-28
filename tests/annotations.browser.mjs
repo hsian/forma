@@ -21,7 +21,7 @@ async function savedContent(number, content) {
   await page.locator('[data-save-status="saved"]').waitFor();
 }
 try {
-  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${base}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   const original = (await (await page.request.get(`${base}/api/pages/default-page/document`)).json()).document;
   await button('打开标注面板').click(); await button('添加标注').click();
   await place(.2, .25);
@@ -76,7 +76,7 @@ try {
   const readerContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await readerContext.request.post(`${base}/api/auth/login`, { data: { username: 'reader', password: 'password-123' } });
   const reader = await readerContext.newPage(); reader.on('pageerror', error => errors.push(error.message));
-  await reader.goto(base); await reader.locator('.studio[data-server-state="ready"]').waitFor();
+  await reader.goto(`${base}/design`); await reader.locator('.studio[data-server-state="ready"]').waitFor();
   assert.equal(await reader.locator('.artboard').evaluate(element => element.inert), true);
   await reader.locator('.annotation-pin[data-number="1"]').click();
   assert.equal(await reader.getByRole('textbox', { name: '标注说明', exact: true }).inputValue(), '下一版本的查询规则。');

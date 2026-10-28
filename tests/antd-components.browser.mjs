@@ -21,7 +21,7 @@ try {
   const all = { width: 1600, height: 12000, background: '#ffffff', elements: antdKinds.map((kind, index) => ({ ...makeElement(kind, 24 + index % 3 * 520, 24 + Math.floor(index / 3) * 420), id: 'catalog-' + kind, width: Math.min(makeElement(kind).width, 480) })) };
   const saved = await page.request.put(`${base}/api/pages/default-page/document`, { data: { revision: initial.revision, document: all } });
   assert.equal(saved.status(), 200, await saved.text());
-  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${base}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   assert.equal(await page.locator('.artboard .node').count(), antdKinds.length);
   assert.equal(await page.getByText('组件暂不可用', { exact: true }).count(), 0);
   await button('元素').click();

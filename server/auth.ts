@@ -208,6 +208,6 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
   function createProject<T extends { project: { id: string } }>(create: () => T, user: AuthUser) {
     return db.transaction(() => { const result = create(); onProjectCreated(result.project.id, user); return result; });
   }
-  return { role, can, access: permissions.access, allowedProjects, checkLease, leaseInfo, createProject };
+  return { role, can, projectRoles: permissions.roles, access: permissions.access, allowedProjects, checkLease, leaseInfo, createProject };
 }
 export type AuthService = ReturnType<typeof registerAuth>;

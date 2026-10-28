@@ -11,14 +11,14 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 const button = (p, name) => p.getByRole('button', { name, exact: true });
 async function login(username) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); const p = await context.newPage(); p.on('pageerror', error => errors.push(error.message));
-  await p.goto(base); await p.getByRole('heading', { name: '登录工作台', exact: true }).waitFor();
+  await p.goto(`${base}/design`); await p.getByRole('heading', { name: '登录 Forma', exact: true }).waitFor();
   await p.getByRole('textbox', { name: '用户名', exact: true }).fill(username); await p.getByLabel('密码', { exact: true }).fill('password-123'); await button(p, '登录').click();
   await p.locator('.studio[data-server-state="ready"]').waitFor(); return p;
 }
 async function choose(p, label, option) { await p.locator('.ant-select').filter({ has: p.getByRole('combobox', { name: label, exact: true }) }).click(); await p.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').last().locator('.ant-select-item-option').filter({ hasText: new RegExp('^' + option + '$') }).click(); }
 try {
   assert.equal((await page.request.get(`${base}/api/bootstrap`)).status(), 401);
-  await page.goto(base); await page.getByRole('heading', { name: '创建管理员账号', exact: true }).waitFor();
+  await page.goto(`${base}/design`); await page.getByRole('heading', { name: '创建管理员账号', exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/auth-setup.png', fullPage: true });
   await page.getByRole('textbox', { name: '用户名', exact: true }).fill('admin'); await page.getByLabel('密码', { exact: true }).fill('password-123'); await page.getByLabel('确认密码', { exact: true }).fill('password-123');
   await button(page, '创建管理员并进入').click(); await page.locator('.studio[data-server-state="ready"]').waitFor();
@@ -73,7 +73,7 @@ try {
   assert.equal((await reader.request.post(`${base}/api/pages/default-page/ai/turn`, { data: {} })).status(), 403);
   const previewOpen = reader.waitForEvent('popup'); await button(reader, '预览原型').click(); const preview = await previewOpen; await preview.locator('.preview-page').waitFor(); await preview.close();
   await reader.screenshot({ path: 'test-results/auth-readonly.png', fullPage: true });
-  await button(editor, '账号菜单').click(); await editor.getByRole('menuitem', { name: '退出登录', exact: true }).click(); await editor.getByRole('heading', { name: '登录工作台', exact: true }).waitFor();
+  await button(editor, '账号菜单').click(); await editor.getByRole('menuitem', { name: '退出登录', exact: true }).click(); await editor.getByRole('heading', { name: '登录 Forma', exact: true }).waitFor();
   await button(page, '页面').click(); await page.locator('.page-tree-title>span').getByText('用户管理', { exact: true }).click();
   await page.locator('.node[data-id="title"]').getByText('成员编辑后的标题', { exact: true }).waitFor();
   // Before the next poll, another window can finish an edit and release the page.
@@ -81,7 +81,7 @@ try {
   const latestEditor = await login('editor');
   await latestEditor.locator('.node[data-id="title"]').click(); await latestEditor.getByRole('textbox', { name: '文字内容', exact: true }).fill('其他窗口的最新内容');
   await latestEditor.locator('[data-save-status="saved"]').waitFor();
-  await button(latestEditor, '账号菜单').click(); await latestEditor.getByRole('menuitem', { name: '退出登录', exact: true }).click(); await latestEditor.getByRole('heading', { name: '登录工作台', exact: true }).waitFor();
+  await button(latestEditor, '账号菜单').click(); await latestEditor.getByRole('menuitem', { name: '退出登录', exact: true }).click(); await latestEditor.getByRole('heading', { name: '登录 Forma', exact: true }).waitFor();
   await page.locator('.node[data-id="title"]').click(); await page.getByRole('textbox', { name: '文字内容', exact: true }).fill('过期内容不应覆盖');
   await page.locator('.editing-hint').filter({ hasText: '页面已有更新' }).waitFor();
   await page.locator('.node[data-id="title"]').getByText('其他窗口的最新内容', { exact: true }).waitFor();

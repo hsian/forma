@@ -8,7 +8,7 @@ import { PrototypePlayer } from './PrototypePlayer';
 
 const locationState = () => {
   const query = new URLSearchParams(window.location.search);
-  return { projectId: query.get('projectId') || '', pageId: query.get('pageId') || '', dialogId: query.get('dialogId') || '', versionId: query.get('versionId') || '' };
+  return { projectId: query.get('projectId') || '', pageId: query.get('pageId') || '', dialogId: query.get('dialogId') || '', annotationId: query.get('annotationId') || '', versionId: query.get('versionId') || '' };
 };
 async function get<T>(url: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal });
@@ -17,7 +17,7 @@ async function get<T>(url: string, signal: AbortSignal): Promise<T> {
   return result;
 }
 export default function ProjectPreview() {
-  const [showAnnotations, setShowAnnotations] = useState(false);
+  const [showAnnotations, setShowAnnotations] = useState(() => new URLSearchParams(window.location.search).has('annotationId'));
   const [route, setRoute] = useState(locationState);
   const [metadata, setMetadata] = useState<{ project: ProjectInfo; pages: PageInfo[]; version?: { name: string } } | null>(null);
   const [loaded, setLoaded] = useState<{ pageId: string; document: PrototypeDocument; revision: number } | null>(null);
@@ -86,10 +86,10 @@ export default function ProjectPreview() {
     return (metadata?.pages || []).filter(page => page.parentId === parentId).map(page => ({ key: page.id, icon: <FileOutlined/>, title: <span title={page.name}>{page.name}</span>, children: nodes(page.id) }));
   }
   return <div className="project-preview">
-    <header className="preview-toolbar"><div><Button type="text" aria-label={sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'} title={sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'} aria-expanded={sidebarVisible} aria-controls="preview-sidebar" icon={sidebarVisible ? <MenuFoldOutlined/> : <MenuUnfoldOutlined/>} onClick={() => setSidebarVisible(visible => !visible)}/><span className="brand-mark small"><LayoutOutlined/></span><strong title={metadata?.project.name}>{metadata?.project.name || '项目预览'}</strong><span className="preview-badge">{route.versionId ? `${metadata?.version?.name || '固定版本'} · 只读预览` : '工作草稿 · 交互预览'}</span></div><div><Button className="preview-annotation-toggle" aria-label={showAnnotations ? '隐藏预览标注' : '显示预览标注'} aria-pressed={showAnnotations} icon={<CommentOutlined/>} onClick={() => setShowAnnotations(value => !value)}>标注{current?.document.annotations?.length ? ` · ${current.document.annotations.length}` : ''}</Button><Button aria-label="刷新项目预览" icon={<ReloadOutlined/>} onClick={() => setRefresh(old => old + 1)}>刷新</Button><Button aria-label="返回编辑" onClick={() => { window.close(); window.setTimeout(() => window.location.assign('/'), 100); }}>返回编辑</Button></div></header>
+    <header className="preview-toolbar"><div><Button type="text" aria-label={sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'} title={sidebarVisible ? '隐藏侧边栏' : '显示侧边栏'} aria-expanded={sidebarVisible} aria-controls="preview-sidebar" icon={sidebarVisible ? <MenuFoldOutlined/> : <MenuUnfoldOutlined/>} onClick={() => setSidebarVisible(visible => !visible)}/><span className="brand-mark small"><LayoutOutlined/></span><strong title={metadata?.project.name}>{metadata?.project.name || '项目预览'}</strong><span className="preview-badge">{route.versionId ? `${metadata?.version?.name || '固定版本'} · 只读预览` : '工作草稿 · 交互预览'}</span></div><div><Button className="preview-annotation-toggle" aria-label={showAnnotations ? '隐藏预览标注' : '显示预览标注'} aria-pressed={showAnnotations} icon={<CommentOutlined/>} onClick={() => setShowAnnotations(value => !value)}>标注{current?.document.annotations?.length ? ` · ${current.document.annotations.length}` : ''}</Button><Button aria-label="刷新项目预览" icon={<ReloadOutlined/>} onClick={() => setRefresh(old => old + 1)}>刷新</Button><Button aria-label="返回编辑" onClick={() => { window.close(); window.setTimeout(() => window.location.assign(`/design?${new URLSearchParams({ projectId: route.projectId, ...(route.versionId ? {} : { pageId: route.pageId || '' }) })}`), 100); }}>返回编辑</Button></div></header>
     <div className="project-preview-layout"><aside id="preview-sidebar" className="preview-sidebar" aria-label="项目页面树" hidden={!sidebarVisible}><div className="preview-tree-heading"><strong>项目页面</strong><span>{metadata?.pages.length || 0}</span></div><Tree className="preview-page-tree" blockNode showIcon showLine={{ showLeafIcon: false }} treeData={nodes(null)} expandedKeys={expanded} onExpand={setExpanded} selectedKeys={selected ? [selected.id] : []} onSelect={keys => { if (keys[0] && keys[0] !== selected?.id) navigate(String(keys[0])); }}/></aside>
       <main className="preview-main"><div className="preview-page-heading"><strong>{selected?.name || '原型预览'}</strong><span>{current ? `${current.document.width} × ${current.document.height}` : ''}</span></div><div className="preview-scroll" ref={scroll}>
-        {error ? <Alert type="error" showIcon message="无法打开预览" description={error} action={<Button onClick={() => setRefresh(old => old + 1)}>重试</Button>}/> : loading ? <div className="preview-loading"><Spin tip="正在读取原型"><div/></Spin></div> : current ? <PrototypePlayer key={`${current.pageId}:${current.revision}`} doc={current.document} showAnnotations={showAnnotations} initialDialogId={route.dialogId || undefined}/> : <Empty description="项目暂无页面"/>}
+        {error ? <Alert type="error" showIcon message="无法打开预览" description={error} action={<Button onClick={() => setRefresh(old => old + 1)}>重试</Button>}/> : loading ? <div className="preview-loading"><Spin tip="正在读取原型"><div/></Spin></div> : current ? <PrototypePlayer key={`${current.pageId}:${current.revision}`} doc={current.document} showAnnotations={showAnnotations} initialAnnotationId={route.annotationId || undefined} initialDialogId={route.dialogId || undefined}/> : <Empty description="项目暂无页面"/>}
       </div></main>
     </div><footer className="preview-bottom"><span>交互演示 · 数据仅用于当前预览</span><span>点击左侧页面切换原型</span></footer>
   </div>;

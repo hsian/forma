@@ -21,7 +21,7 @@ async function create(name) {
 let preview;
 try {
   const child = (await (await page.request.post(`${base}/api/projects/default-project/pages`, { data: { name: '迭代子页面', parentId: 'default-page' } })).json());
-  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${base}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   await button('项目版本管理').click();
   assert.equal(await page.locator('.left-panel .version-controls').count(), 0);
   assert.equal(await page.locator('.right-panel .version-panel').count(), 1);

@@ -24,7 +24,7 @@ async function openSelect(select) {
 }
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.TEST_URL);
+  await page.goto(`${process.env.TEST_URL}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.getByRole('button', { name: '元素', exact: true }).click();
   await page.getByPlaceholder('搜索元素', { exact: true }).fill('select');

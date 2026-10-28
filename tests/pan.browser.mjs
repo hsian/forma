@@ -20,7 +20,7 @@ function moved(before, after, dx, dy) {
   assert.ok(Math.abs(after.y - before.y - dy) < 2, `垂直应移动 ${dy}，实际 ${after.y - before.y}`);
 }
 try {
-  await page.goto(process.env.TEST_URL);
+  await page.goto(`${process.env.TEST_URL}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await button('适应画布').click();
   const original = await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json();

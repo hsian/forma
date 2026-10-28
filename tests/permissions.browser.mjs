@@ -16,7 +16,7 @@ async function choose(label, option) {
 try {
   const setup = await page.request.post(`${base}/api/auth/setup`, { data: { username: 'admin', password: 'password-123' } }); assert.equal(setup.status(), 200);
   const created = await page.request.post(`${base}/api/admin/users`, { data: { username: 'designer', password: 'password-123' } }); const account = (await created.json()).user;
-  await page.goto(base); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${base}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   await button('账号菜单').click(); await page.getByRole('menuitem', { name: '账号与项目权限', exact: true }).click();
   const center = page.locator('.management-page');
   await center.getByRole('heading', { name: '项目成员', exact: true }).waitFor();

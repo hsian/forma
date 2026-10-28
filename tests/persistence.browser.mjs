@@ -25,7 +25,7 @@ async function waitSaved(target, text) {
   throw Error(`未保存预期文本：${text}`);
 }
 try {
-  await page.goto(base);
+  await page.goto(`${base}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   pageId = (await (await page.request.get(`${base}/api/bootstrap`)).json()).page.id;
   let holdFirstResponse = true;
@@ -89,7 +89,7 @@ try {
 
   const second = await authenticatedPage(browser, { viewport: { width: 1440, height: 1000 } });
   second.on('pageerror', error => errors.push(error.message));
-  await second.goto(base);
+  await second.goto(`${base}/design`);
   await second.locator('.studio[data-server-state="ready"]').waitFor();
   await editTitle(page, '窗口一已保存');
   await waitSaved(page, '窗口一已保存');

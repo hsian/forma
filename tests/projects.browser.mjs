@@ -38,7 +38,7 @@ async function selectProject(name) {
 async function selectedId() { return page.evaluate(() => localStorage.getItem('forma:last-page')); }
 async function projectPages(id) { return (await (await page.request.get(`${base}/api/projects/${id}/pages`)).json()).pages; }
 try {
-  await page.goto(base);
+  await page.goto(`${base}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.page-tree-title>span').filter({ hasText: /^用户管理$/ }).waitFor();
   const initial = await (await page.request.get(`${base}/api/bootstrap`)).json();

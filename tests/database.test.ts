@@ -143,3 +143,55 @@ test('保存时元信息更新失败会回滚整个事务，文档与版本不�
     assert.deepEqual(repository.readDocument(defaultPageId), { document: initial.document, revision: 0, updatedAt: initial.updatedAt });
   } finally { connection.close(); }
 });
+
+
+test('移除研发测试数据和归档表，保留原型、版本、账号与权限', () => {
+  mkdirSync('test-results', { recursive: true });
+  const directory = mkdtempSync(resolve('test-results/prototype-only-upgrade-'));
+  const migrations = resolve(directory, 'old-migrations'); mkdirSync(resolve(migrations, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync('drizzle/meta/_journal.json', 'utf8')); journal.entries = journal.entries.filter((entry: {idx: number}) => entry.idx < 9);
+  writeFileSync(resolve(migrations, 'meta/_journal.json'), JSON.stringify(journal));
+  for (const entry of journal.entries) copyFileSync('drizzle/' + entry.tag + '.sql', resolve(migrations, entry.tag + '.sql'));
+  const path = resolve(directory, 'old.db'), old = new Database(path); old.pragma('foreign_keys = ON'); migrate(drizzle(old), { migrationsFolder: migrations });
+  const insert = (table: string, values: Record<string, string | number | null>) => old.prepare('INSERT INTO ' + table + ' (' + Object.keys(values).join(',') + ') VALUES (' + Object.keys(values).map(() => '?').join(',') + ')').run(...Object.values(values));
+  for (const id of ['owner', 'product-member', 'custom-member']) insert('users', { id, username:id, password_hash:'existing-password', role:id === 'owner' ? 'admin' : 'member', created_at:1 });
+  insert('projects', { id:'old-project', name:'保留原型', owner_id:'owner', created_at:1, updated_at:1 });
+  insert('project_roles', { id:'custom-role', project_id:'old-project', name:'自定义设计角色', description:'保留原型编辑权限', permissions:JSON.stringify(['prototype.read','prototype.edit','rd.read','task.edit']), revision:1 });
+  insert('project_members', { project_id:'old-project', user_id:'product-member', role:'viewer', custom_role_id:'product' });
+  insert('project_members', { project_id:'old-project', user_id:'custom-member', role:'editor', custom_role_id:'custom-role' });
+  insert('pages', { id:'old-page', project_id:'old-project', folder_id:null, parent_id:null, name:'旧原型页', position:0, created_at:1, updated_at:1 });
+  const document = structuredClone(seedDocument); insert('documents', { page_id:'old-page', content:JSON.stringify(document), revision:7, updated_at:1 });
+  insert('project_versions', { id:'old-version', project_id:'old-project', project_name:'保留原型', name:'已确认版本', description:'旧版', created_by:'owner', created_at:1 });
+  for (const [id, parent] of [['old-story', null], ['old-task', 'old-story']]) insert('rd_items', { id, project_id:'old-project', kind:parent ? 'task':'story', number:1, key:id, title:id, description:'原需求说明', acceptance:'', status:parent ? 'open':'draft', workflow_version:1, owner_id:'owner', owner_ids:'["owner"]', tester_id:null, creator_id:'owner', parent_id:parent, iteration_id:null, priority:'p2', severity:'normal', resolution:'', found_version:'', fix_version:'', due_date:'', estimate:0, spent:0, blocked:0, blocked_reason:'', revision:1, deleted_at:null, completed_at:null, created_at:1, updated_at:1 });
+  insert('rd_prototype_links', { id:'old-link', item_id:'old-story', version_id:'old-version', page_id:'old-page', annotation_id:null, version_name:'已确认版本', page_name:'旧原型页', annotation_title:'', dialog_id:null, created_at:1 });
+  insert('rd_attachments', { id:'old-file', item_id:'old-task', name:'原附件.txt', bytes:3, data:'YWJj', actor:'owner', created_at:1 });
+  old.close();
+  const upgraded = openDatabase(path);
+  try {
+    const repository = createRepository(upgraded.db);
+    assert.deepEqual(repository.readDocument('old-page')!.document, document); assert.equal(repository.readDocument('old-page')!.revision, 7);
+    const member = upgraded.sqlite.prepare('SELECT role,custom_role_id FROM project_members WHERE user_id = ?').get('product-member') as {role:string;custom_role_id:null}; assert.deepEqual(member, {role:'viewer',custom_role_id:null});
+    const service = permissionService(upgraded.db, Date.now); const user = {id:'custom-member',username:'custom-member',role:'member' as const}; assert.equal(service.can(user,'old-project','prototype.edit'),true);
+    assert.deepEqual(service.access(user,'old-project')!.permissions, ['prototype.read','prototype.edit']);
+    assert.deepEqual(upgraded.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND (name GLOB 'rd_*' OR name GLOB 'retired_rd_*')").all(), []);
+    assert.equal((upgraded.sqlite.prepare('SELECT password_hash FROM users WHERE id = ?').get('owner') as {password_hash:string}).password_hash, 'existing-password');
+    assert.equal((upgraded.sqlite.prepare('SELECT COUNT(*) AS count FROM project_versions').get() as {count:number}).count, 1);
+    assert.equal(upgraded.sqlite.prepare('PRAGMA foreign_key_check').all().length, 0);
+    assert.deepEqual(repository.deleteVersion('old-project','old-version'), {ok:true});
+  } finally { upgraded.close(); }
+  const reopened = openDatabase(path); try { assert.deepEqual(reopened.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND (name GLOB 'rd_*' OR name GLOB 'retired_rd_*')").all(), []); assert.equal((reopened.sqlite.prepare('SELECT COUNT(*) AS count FROM documents').get() as {count:number}).count, 1); } finally { reopened.close(); }
+});
+
+
+test('已完成归档的数据库也会移除全部研发测试归档表', () => {
+  mkdirSync('test-results', { recursive: true });
+  const directory = mkdtempSync(resolve('test-results/rd-test-data-cleanup-'));
+  const migrations = resolve(directory, 'old-migrations'); mkdirSync(resolve(migrations, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync('drizzle/meta/_journal.json', 'utf8')); journal.entries = journal.entries.filter((entry: {idx: number}) => entry.idx < 10);
+  writeFileSync(resolve(migrations, 'meta/_journal.json'), JSON.stringify(journal));
+  for (const entry of journal.entries) copyFileSync('drizzle/' + entry.tag + '.sql', resolve(migrations, entry.tag + '.sql'));
+  const path = resolve(directory, 'archived.db'), old = new Database(path); migrate(drizzle(old), { migrationsFolder: migrations });
+  for (const table of ['items','iterations','workflows','events','prototype_links','attachments']) old.prepare('INSERT INTO retired_rd_' + table + ' (id) VALUES (?)').run('test-data');
+  old.close(); const cleaned = openDatabase(path);
+  try { assert.deepEqual(cleaned.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name GLOB 'retired_rd_*'").all(), []); } finally { cleaned.close(); }
+});

@@ -17,7 +17,7 @@ const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 await mkdir('test-results', { recursive: true });
 try {
-  await page.goto(process.env.TEST_URL);
+  await page.goto(`${process.env.TEST_URL}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.node').first().waitFor();
   const initialCount = await page.locator('.node').count();

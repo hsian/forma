@@ -23,9 +23,12 @@ app.addHook('onRequest', async (request, reply) => {
 const auth = registerAuth(app, database.db);
 registerApi(app, repository, auth);
 registerAi(app, database.db, auth);
+
 if (process.argv.includes('--production')) {
   await app.register(fastifyStatic, { root: fileURLToPath(new URL('../dist', import.meta.url)) });
   app.get('/preview', async (_request, reply) => reply.sendFile('index.html'));
+  app.get('/design', async (_request, reply) => reply.sendFile('index.html'));
+  app.get('/workbench', async (request, reply) => { const legacy = new URL(request.url, 'http://localhost'); const query = new URLSearchParams(); for (const key of ['projectId', 'pageId']) { const value = legacy.searchParams.get(key); if (value) query.set(key, value); } return reply.redirect(`/${query.size ? '?' + query : ''}`); });
   app.get('/manage', async (_request, reply) => reply.sendFile('index.html'));
 } else {
   const { createServer } = await import('vite');

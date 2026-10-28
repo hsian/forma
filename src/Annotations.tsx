@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { App, Button, Empty, Input, Popover, Switch } from 'antd';
 import { CommentOutlined, DeleteOutlined, EnvironmentOutlined, PlusOutlined } from '@ant-design/icons';
 import type { PrototypeAnnotation } from '../shared/model';
@@ -6,12 +6,14 @@ import './annotations.css';
 
 interface LayerProps {
   annotations: PrototypeAnnotation[]; visible: boolean; selectedId?: string | null;
-  placing?: boolean; panning?: boolean; pinScale?: number; style?: CSSProperties;
+  focusId?: string; placing?: boolean; panning?: boolean; pinScale?: number; style?: CSSProperties;
   onPlace?: (point: { x: number; y: number }) => void; onSelect?: (id: string) => void;
 }
-export function AnnotationLayer({ annotations, visible, selectedId, placing, panning, pinScale = 1, style, onPlace, onSelect }: LayerProps) {
+export function AnnotationLayer({ annotations, visible, selectedId, focusId, placing, panning, pinScale = 1, style, onPlace, onSelect }: LayerProps) {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (visible && focusId) requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(`[data-annotation-id="${CSS.escape(focusId)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })); }, [visible, focusId]);
   if (!visible) return null;
-  return <div className={`annotation-layer ${placing && !panning ? 'is-placing' : ''} ${panning ? 'is-panning' : ''}`} style={style} aria-label="原型标注层"
+  return <div ref={root} className={`annotation-layer ${placing && !panning ? 'is-placing' : ''} ${panning ? 'is-panning' : ''}`} style={style} aria-label="原型标注层"
     onMouseDown={event => { if (placing || (event.target as HTMLElement).closest('.annotation-pin')) event.stopPropagation(); }}
     onClick={event => {
       if (!placing || panning || (event.target as HTMLElement).closest('.annotation-pin')) return;
@@ -20,7 +22,7 @@ export function AnnotationLayer({ annotations, visible, selectedId, placing, pan
     }}>
     {annotations.map(note => {
       const pin = <button key={note.id} type="button" className={`annotation-pin ${selectedId === note.id ? 'is-selected' : ''}`} data-annotation-id={note.id} data-number={note.number} aria-label={`标注 ${note.number}：${note.title || '未命名'}`} aria-pressed={onSelect ? selectedId === note.id : undefined} style={{ left: `clamp(${14 * pinScale}px, ${note.x * 100}%, calc(100% - ${14 * pinScale}px))`, top: `clamp(${14 * pinScale}px, ${note.y * 100}%, calc(100% - ${14 * pinScale}px))`, transform: `translate(-50%, -50%) scale(${pinScale})` }} onClick={event => { event.stopPropagation(); onSelect?.(note.id); }}>{note.number}</button>;
-      return onSelect ? pin : <Popover key={note.id} trigger="click" title={`标注 ${note.number} · ${note.title || '未命名'}`} content={<div className="annotation-popover-content">{note.content || '尚未填写说明'}</div>}>{pin}</Popover>;
+      return onSelect ? pin : <Popover key={note.id} trigger="click" defaultOpen={note.id === focusId} title={`标注 ${note.number} · ${note.title || '未命名'}`} content={<div className="annotation-popover-content">{note.content || '尚未填写说明'}</div>}>{pin}</Popover>;
     })}
   </div>;
 }

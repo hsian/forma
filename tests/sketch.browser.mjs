@@ -13,7 +13,7 @@ try {
   const doc=JSON.parse(readFileSync('test-results/sketch-analysis/document.json','utf8'));
   const response=await page.request.put(`${process.env.TEST_URL}/api/pages/default-page/document`,{data:{revision:0,document:doc}});
   assert.equal(response.ok(),true,await response.text());
-  await page.goto(process.env.TEST_URL);await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.goto(`${process.env.TEST_URL}/design`);await page.locator('.studio[data-server-state="ready"]').waitFor();
   assert.equal(await page.locator('.node').count(),doc.elements.filter(e=>!e.parentId).length);
   await page.screenshot({path:'test-results/sketch-analysis/editor.png'});
   const title=doc.elements.find(e=>e.text==='记账凭证');

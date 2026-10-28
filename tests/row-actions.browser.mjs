@@ -18,7 +18,7 @@ try {
   const existing = await read();
   const saved = await editor.request.put(`${base}/api/pages/default-page/document`, { data: { revision: existing.revision, document: fixture } });
   assert.equal(saved.ok(), true, await saved.text());
-  await editor.goto(base); await editor.locator('.studio[data-server-state="ready"]').waitFor();
+  await editor.goto(`${base}/design`); await editor.locator('.studio[data-server-state="ready"]').waitFor();
   await editor.locator('.node[data-id="records"]').click();
   await editor.getByRole('textbox', { name: '行操作 1 文字', exact: true }).waitFor();
   assert.equal(await editor.getByRole('textbox', { name: /^行操作 \d+ 文字$/ }).count(), 3);
