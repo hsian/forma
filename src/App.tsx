@@ -249,6 +249,7 @@ export default function App() {
   }
   async function startPreview() {
     if (previewOpening.current || !currentPageId || !currentProjectId) return;
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const popup = window.open('about:blank', '_blank');
     if (!popup) { void message.warning('请允许此站点打开新标签页后重试预览'); return; }
     popup.opener = null;
@@ -270,6 +271,11 @@ export default function App() {
       if (server !== 'ready' || managing || openingPreview) return;
       const target = e.target instanceof Element ? e.target : null;
       const overlayOpen = [...document.querySelectorAll('[role="dialog"],[role="menu"],[role="listbox"],.ant-image-preview-wrap')].some(element => element.getClientRects().length);
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key === 'Enter' && !e.isComposing && !overlayOpen) {
+        e.preventDefault();
+        if (!e.repeat) void startPreview();
+        return;
+      }
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing && !overlayOpen && !target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"],.ant-select,.ai-panel')) {
         e.preventDefault();
         if (!e.repeat) setCanvasExpanded(value => !value);

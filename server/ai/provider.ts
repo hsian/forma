@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { join, dirname, isAbsolute, delimiter } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { aiResultJsonSchema } from '../../shared/ai.js';
+import { claudeConfiguration } from './claude-config.js';
 
 export type Provider = 'codex' | 'claude';
 export type ImageInput = { mediaType: 'image/png' | 'image/jpeg'; data: string };
@@ -62,6 +63,7 @@ export function webSocketOverrides(config: string) {
 }
 async function invoke(provider: Provider, prompt: string, signal: AbortSignal, onText: (text: string) => void, image?: ImageInput, outputSchema: Record<string, unknown> = aiResultJsonSchema) {
   const launch = resolveCli(provider); if (!launch) throw new ModelError('missing');
+  const configuration = provider === 'claude' ? await claudeConfiguration() : { env: process.env, model: undefined };
   const directory = await mkdtemp(join(tmpdir(), 'forma-ai-'));
   try {
     const schemaPath = join(directory, 'schema.json'); const outputPath = join(directory, 'result.json');
@@ -78,7 +80,7 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
       }
       args.splice(args.length - 1, 0, ...transport);
     }
-    const model = process.env[`FORMA_${provider.toUpperCase()}_MODEL`];
+    const model = process.env[`FORMA_${provider.toUpperCase()}_MODEL`] || configuration.model;
     if (model) args.splice(provider === 'codex' ? args.length - 1 : args.length, 0, '--model', model);
     if (image && provider === 'codex') {
       const imagePath = join(directory, image.mediaType === 'image/png' ? 'reference.png' : 'reference.jpg');
@@ -88,7 +90,7 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
     if (image && provider === 'claude') args.push('--input-format', 'stream-json');
     const result = await new Promise<string>((resolve, reject) => {
       if (signal.aborted) { reject(new ModelError('cancelled')); return; }
-      const child = spawn(launch.command, [...launch.args, ...args], { cwd: directory, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
+      const child = spawn(launch.command, [...launch.args, ...args], { cwd: directory, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: configuration.env });
       let buffer = ''; let output = ''; let final = ''; let error = ''; let bytes = 0; let settled = false; let published = '';
       const finish = (cause?: Error) => {
         if (settled) return; settled = true; clearTimeout(timer); signal.removeEventListener('abort', cancel);
@@ -150,7 +152,7 @@ export async function generate(prompt: string, signal: AbortSignal, onStatus: (t
 }
 export function friendlyError(error: unknown) {
   if (error instanceof ModelError && error.kind === 'authentication') return error.provider === 'claude'
-    ? 'Claude 登录已失效，请在终端运行 claude 完成登录后重新发送。本轮未修改原型。'
+    ? 'Claude CLI 认证失败，请检查所用服务的 API 地址和密钥配置；使用官方账号时请检查登录状态。本轮未修改原型。'
     : 'Codex 登录已失效，请在终端运行 codex login 重新登录后发送。本轮未修改原型。';
   if (error instanceof ModelError) return { authentication: '模型登录已失效，请重新登录后发送。', missing: '未找到模型命令，请在本机安装并登录 Codex 或 Claude，或配置本项目的命令路径。', timeout: '模型响应超时，可以重试。', cancelled: '已停止，本轮没有修改原型。', quota: '模型额度不足，请稍后重试或调整引擎配置。', failed: '模型调用失败，请检查本机模型命令的登录和网络配置。' }[error.kind];
   return error instanceof Error ? error.message : '处理失败，请重试';

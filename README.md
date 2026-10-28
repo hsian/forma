@@ -118,7 +118,7 @@ AI 使用与服务端校验一致的属性 Schema。修改表格时可只提供�
 
 模型调用、对话接口和存储均由本项目提供，不依赖任何其他项目的服务、接口、代码包、数据库或配置。当前通过本机 Codex / Claude CLI 登录调用模型；不另建模型账号，不在浏览器暴露凭据。Codex 的非交互结构化输出参数依据 [OpenAI Docs](https://learn.chatgpt.com/docs/non-interactive-mode) 实现。
 
-需要调整引擎时，把根目录 `.env.example` 复制为 `.env` 并修改，重启服务生效。默认 `FORMA_AI_PROVIDER=auto`，先用 Codex，仅在明确额度耗尽时接续 Claude；可设为 `codex` 或 `claude` 固定引擎。网络、登录错误和普通 429 不切换引擎。`FORMA_CODEX_CLI` / `FORMA_CLAUDE_CLI` 可指定本机绝对命令路径（可执行文件或 `.js/.mjs`），npm 全局安装通常自动识别；`FORMA_CODEX_MODEL` / `FORMA_CLAUDE_MODEL` 可选，默认沿用 CLI 模型配置。Codex 沿用本机 CLI 登录和接口连接配置，不读取其他业务项目配置；调用在临时目录中以只读方式运行，并关闭内置执行类工具。`FORMA_AI_TIMEOUT_MS` 默认 120000，最长 300000。
+需要调整引擎时，把根目录 `.env.example` 复制为 `.env` 并修改，重启服务生效。默认 `FORMA_AI_PROVIDER=auto`，先用 Codex，仅在明确额度耗尽时接续 Claude；可设为 `codex` 或 `claude` 固定引擎。网络、登录错误和普通 429 不切换引擎。`FORMA_CODEX_CLI` / `FORMA_CLAUDE_CLI` 可指定本机绝对命令路径（可执行文件或 `.js/.mjs`），npm 全局安装通常自动识别；`FORMA_CODEX_MODEL` / `FORMA_CLAUDE_MODEL` 可选，默认沿用 CLI 模型配置。Codex 沿用本机 CLI 登录和接口连接配置，不读取其他业务项目配置；调用在临时目录中以只读方式运行，并关闭内置执行类工具。Claude 读取当前用户 `~/.claude/settings.json`（或 `CLAUDE_CONFIG_DIR` 指定目录）中的连接环境变量和模型设置，支持沿用 MiniMax 等兼容服务的配置，显式环境变量及 `FORMA_CLAUDE_MODEL` 优先；不会加载用户 hooks、插件或工具设置。`FORMA_AI_TIMEOUT_MS` 默认 120000，最长 300000。
 
 原型和设计稿的 AI 输入框支持在输入框内直接粘贴 PNG/JPEG 图片。每条消息可附一张图片，最大 6MB、8000px、2000 万像素；发送前可预览或移除，也可仅发送图片。图片作为本轮参考传给模型，不会直接插入画布；失败或停止后保留附件以便重试。附件本身不写入历史或草稿缓存，历史只保留附图标记，后续需要查看原图时请重新附图。
 
