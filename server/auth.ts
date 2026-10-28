@@ -83,14 +83,15 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
       const access = role(user, projectId);
       if (!access) return fail(reply, 403, '没有此项目的访问权限');
       if (!['GET', 'HEAD'].includes(request.method)) {
+        const designAnalysis = request.method === 'POST' && /^\/api\/pages\/[^/]+\/design\/[^/]+\/ai\/turn$/.test(path);
         const required = path.includes('/members') || path.includes('/roles') || path.endsWith('/owner') ? 'member.manage'
           : path.includes('/sketch') ? 'sketch.import'
           : path.includes('/versions') ? path.endsWith('/copy') ? 'version.copy' : request.method === 'DELETE' ? 'version.delete' : 'version.publish'
           : path === `/api/projects/${projectId}` ? request.method === 'DELETE' ? 'project.delete' : 'project.update'
           : path.endsWith('/document') || path.includes('/ai/') || path.endsWith('/lease') ? 'prototype.edit'
           : request.method === 'DELETE' ? 'page.delete' : 'page.manage';
-        if (!can(user, projectId, required)) return fail(reply, 403, required === 'project.delete' && access === 'admin' ? '仅项目所有者或系统管理员可删除此项目' : '没有此操作权限，请联系项目管理员');
-        if (params.pageId && !path.endsWith('/lease') && !path.endsWith('/duplicate')) {
+        if (!designAnalysis && !can(user, projectId, required)) return fail(reply, 403, required === 'project.delete' && access === 'admin' ? '仅项目所有者或系统管理员可删除此项目' : '没有此操作权限，请联系项目管理员');
+        if (params.pageId && !designAnalysis && !path.endsWith('/lease') && !path.endsWith('/duplicate')) {
           const lease = leaseInfo(request, params.pageId);
           const needsLease = path.endsWith('/document') || path.includes('/ai/');
           if ((needsLease && !lease.owned) || (!lease.owned && lease.expiresAt)) return fail(reply, 423, lease.username ? `${lease.username} 正在编辑此页面` : '请先取得页面编辑权');

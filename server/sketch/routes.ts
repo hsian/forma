@@ -67,7 +67,7 @@ export function registerSketchApi(app: FastifyInstance, repository: ReturnType<t
     const item=uploads.get(request.params.token);
     if(!item || item.projectId!==request.params.projectId || item.userId!==userId(request))return reply.code(404).send({message:'导入文件不存在，请重新选择文件'});
     if(item.expires<Date.now()){await discard(request.params.token);return reply.code(410).send({message:'导入文件已过期，请重新选择文件'});}
-    const input=z.object({pageId:z.string().max(200),boardId:z.string().max(200),acceptWarnings:z.boolean().optional()}).strict().safeParse(request.body);
+    const input=z.object({pageId:z.string().max(200),boardId:z.string().max(200),acceptWarnings:z.boolean().optional(),targetPageId:z.string().min(1).max(200).optional()}).strict().safeParse(request.body);
     const selected=input.success?item.boards.find(b=>b.pageId===input.data.pageId&&b.boardId===input.data.boardId):undefined;
     if(!selected)return reply.code(400).send({message:'请选择文件中的画板'});
     try {
@@ -79,6 +79,17 @@ export function registerSketchApi(app: FastifyInstance, repository: ReturnType<t
       const document=documentSchema.parse(result.document);
       if(!document.elements.length)throw Error('所选画板没有可转换的可见元素');
       if(Buffer.byteLength(JSON.stringify(document))>8*1024*1024)throw Error('转换后的单页超过 8MB，请减少画板中的图片或图层后重试');
+      if (input.success && input.data.targetPageId) {
+        const targetPageId = input.data.targetPageId;
+        if (!repository.listPages(request.params.projectId).some(page => page.id === targetPageId)) return reply.code(400).send({ message: '请选择当前项目内的关联页面' });
+        if (auth) {
+          const lease = auth.leaseInfo(request, targetPageId);
+          if (!lease.owned && lease.expiresAt) return reply.code(423).send({ message: `${lease.username} 正在编辑此页面，请稍后关联` });
+        }
+        const attached = repository.attachDesignBoard(request.params.projectId, targetPageId, selected.name, document);
+        await discard(request.params.token).catch(()=>{});
+        return { ...attached, report: result.report };
+      }
       const page=repository.importPage(request.params.projectId,selected.name,document);
       // Remove the upload only after the atomic page+document insert succeeds.
       await discard(request.params.token).catch(()=>{});

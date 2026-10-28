@@ -19,12 +19,13 @@ const result = { reply: '已生成按钮颜色调整，可以在画布中查看�
 if (context.message.includes('只讨论')) { result.reply = '可以调整按钮颜色，目前没有修改页面。'; result.operations = []; }
 if (context.message.includes('不合法')) result.operations[0].properties = '{"fontSize":10}';
 if (context.message.includes('自动修正测试') && !input.includes('校验修正请求：')) result.operations[0].properties = '{"fill":"red"}';
-const raw = JSON.stringify(result);
+const analysisReply = context.scope === 'design-analysis' ? { reply: `水平间距 ${context.measurement.spacing?.horizontalGap ?? '未选两个图层'}px；填充 ${context.measurement.selected[0]?.fill || '未选图层'}；字号 ${context.measurement.selected[0]?.fontSize ?? '未知'}px。` } : result;
+const raw = JSON.stringify(analysisReply);
 if (codex) {
   const at = process.argv.indexOf('--output-last-message');
   if (at !== -1) writeFileSync(process.argv[at + 1], raw);
   process.stdout.write(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: raw } }) + '\n');
 } else {
   process.stdout.write(JSON.stringify({ type: 'stream_event', event: { delta: { type: 'text_delta', text: raw } } }) + '\n');
-  process.stdout.write(JSON.stringify({ type: 'result', structured_output: result }) + '\n');
+  process.stdout.write(JSON.stringify({ type: 'result', structured_output: analysisReply }) + '\n');
 }

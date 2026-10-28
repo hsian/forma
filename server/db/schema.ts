@@ -61,6 +61,24 @@ export const documents = sqliteTable('documents', {
   revision: integer('revision').notNull().default(0),
   updatedAt: integer('updated_at').notNull(),
 });
+export const pageDesignSettings = sqliteTable('page_design_settings', {
+  pageId: text('page_id').primaryKey().references(() => pages.id, { onDelete: 'cascade' }),
+  required: integer('required', { mode: 'boolean' }).notNull().default(false),
+});
+export const pageDesignBoards = sqliteTable('page_design_boards', {
+  id: text('id').primaryKey(),
+  pageId: text('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  content: text('content', { mode: 'json' }).$type<PrototypeDocument>().notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+export const designAiMessages = sqliteTable('design_ai_messages', {
+  id: text('id').primaryKey(),
+  designId: text('design_id').notNull().references(() => pageDesignBoards.id, { onDelete: 'cascade' }),
+  role: text('role').$type<'user' | 'assistant'>().notNull(),
+  content: text('content').notNull(), status: text('status').notNull(), provider: text('provider').notNull().default(''),
+  createdAt: integer('created_at').notNull(),
+});
 export const pageLeases = sqliteTable('page_leases', {
   pageId: text('page_id').primaryKey().references(() => pages.id, { onDelete: 'cascade' }),
   userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { registerDesignAi } from './design-routes.js';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/index.js';
@@ -35,6 +36,7 @@ ${JSON.stringify(antdKinds.map(kind => ({ kind, name: antdCatalog[kind].componen
 export { system as aiSystem };
 
 export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthService) {
+  registerDesignAi(app, db, auth);
   const active = new Map<string, AbortController>();
   db.update(aiMessages).set({ status: 'error', content: '上次处理因服务重启中断，未自动应用。' }).where(eq(aiMessages.status, 'running')).run();
   const history = (pageId: string) => db.select().from(aiMessages).where(eq(aiMessages.pageId, pageId)).orderBy(desc(aiMessages.createdAt)).limit(80).all().reverse();

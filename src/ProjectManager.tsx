@@ -2,7 +2,7 @@ import {ImportReport} from './ImportReport';
 import type {PrototypeDocument} from '../shared/model';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { App, Button, Dropdown, Input, Modal, Select, Spin, Tree, type MenuProps } from 'antd';
-import { FileOutlined, MoreOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { FileOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, PictureOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import type { ProjectInfo, PageInfo } from '../shared/projects';
 import { SketchImport } from './SketchImport';
@@ -31,11 +31,12 @@ interface Manager {
   selectProject: (id: string) => void; selectPage: (id: string) => void;
   projectAction: (key: string) => void; pageAction: (key: string, page: PageInfo) => void;
   refresh: () => void;
+  designView: boolean; showDesign: (id: string) => void; showPrototype: () => void; uploadDesign: () => void;
 }
 const Context = createContext<Manager | null>(null);
-function useManager() { const manager = useContext(Context); if (!manager) throw Error('ProjectManagerProvider missing'); return manager; }
+export function useManager() { const manager = useContext(Context); if (!manager) throw Error('ProjectManagerProvider missing'); return manager; }
 
-export function ProjectManagerProvider({ session, children, onBusyChange }: { session: DocumentSession; children: ReactNode; onBusyChange: (busy: boolean) => void }) {
+export function ProjectManagerProvider({ session, children, onBusyChange, onDesignViewChange }: { session: DocumentSession; children: ReactNode; onBusyChange: (busy: boolean) => void; onDesignViewChange: (view: boolean) => void }) {
   const { message, modal } = App.useApp();
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [pages, setPages] = useState<PageInfo[]>([]);
@@ -45,6 +46,13 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [nameValue, setNameValue] = useState('');
   const [sketchOpen, setSketchOpen] = useState(false);
+  const [sketchTarget, setSketchTarget] = useState('');
+  const [designPageId, setDesignPageId] = useState<string | null>(null);
+  const designView = designPageId === session.currentPageId;
+  useEffect(() => { onDesignViewChange(designView); }, [designView, onDesignViewChange]);
+  useEffect(() => { setSketchOpen(false); setSketchTarget(''); setDesignPageId(null); }, [session.currentProjectId]);
+  function showDesign(id: string) { void run(async () => { if (id !== session.currentPageId) await openPage(id); setDesignPageId(id); }); }
+  function uploadDesign() { setSketchTarget(session.currentPageId); setSketchOpen(true); }
   const [imageOpen, setImageOpen] = useState(false);
   const [movePage, setMovePage] = useState<PageInfo | null>(null);
   const [moveParent, setMoveParent] = useState('__root__');
@@ -95,18 +103,24 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     });
     if (success) setNameRequest(null);
   }
-  async function importSketch(token: string, board: SketchBoard, acceptWarnings:boolean) {
+  async function importSketch(token: string, board: SketchBoard, acceptWarnings:boolean, targetPageId?:string) {
     return run(async () => {
-      const result=await api<{page:PageInfo;report:{elements:number;warnings:{message:string;count:number}[]}}>(`/api/projects/${encodeURIComponent(session.currentProjectId)}/sketch/${encodeURIComponent(token)}/import`,'POST',{pageId:board.pageId,boardId:board.boardId,acceptWarnings});
+      const result=await api<{page:PageInfo;report:{elements:number;warnings:{message:string;count:number}[]}}>(`/api/projects/${encodeURIComponent(session.currentProjectId)}/sketch/${encodeURIComponent(token)}/import`,'POST',{pageId:board.pageId,boardId:board.boardId,acceptWarnings,targetPageId});
       setSketchOpen(false);
       await refresh();
+      if (targetPageId) {
+        await openPage(targetPageId); setDesignPageId(targetPageId);
+        void message.success(`已将「${board.name}」关联到页面「${result.page.name}」`);
+        return;
+      }
+      setDesignPageId(null);
       void message.success(`已生成新页面「${result.page.name}」，共 ${result.report.elements} 个元素${result.report.warnings.length ? '，部分设计效果已简化' : ''}`);
       await openPage(result.page.id);
     });
   }
   function projectAction(key: string) {
     if (key === 'image' && session.can('page.manage') && session.can('prototype.edit')) setImageOpen(true);
-    if (key === 'sketch' && session.can('sketch.import')) setSketchOpen(true);
+    if (key === 'sketch' && session.can('sketch.import')) { setSketchTarget(''); setSketchOpen(true); }
     if (key === 'rename') requestName({ kind: 'rename-project', targetId: session.currentProjectId }, session.projectName);
     if (key === 'delete') modal.confirm({
       title: `删除项目「${session.projectName}」？`, content: '项目内的所有页面、子页面和原型内容都会删除。', okText: '删除项目', cancelText: '取消', okButtonProps: { danger: true },
@@ -117,6 +131,13 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     });
   }
   function pageAction(key: string, page: PageInfo) {
+    if (key === 'design-required' && session.can('page.manage')) void run(async () => {
+      const required = !page.uiDesignRequired;
+      await api(`/api/pages/${encodeURIComponent(page.id)}/design`, 'PATCH', { required });
+      if (!required && designPageId === page.id) setDesignPageId(null);
+      await refresh();
+      void message.success(required ? '已开启 UI 设计，可上传设计稿' : '已设为无需 UI 设计，已有设计稿会保留');
+    });
     if(key==='import-report')void run(async()=>{
       const result=await api<{document:PrototypeDocument}>(`/api/pages/${encodeURIComponent(page.id)}/document`);
       modal.info({title:'页面导入报告',width:640,content:result.document.importInfo?<ImportReport report={result.document.importInfo.report}/>:<p>此页面没有导入报告记录。</p>});
@@ -147,10 +168,11 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
   }
   return <Context.Provider value={{ projects, pages, busy, session, name: requestName, projectAction, pageAction,
     selectProject: id => { if (id === session.currentProjectId) return; void run(async () => { const list = await api<{ pages: PageInfo[] }>(`/api/projects/${encodeURIComponent(id)}/pages`); const first = list.pages.find(page => !page.parentId) || list.pages[0]; if (!first) throw Error('项目没有页面'); await openPage(first.id); }); },
-    selectPage: id => { void run(() => openPage(id)); },
+    selectPage: id => { void run(async () => { await openPage(id); setDesignPageId(null); }); },
     refresh: () => { void run(() => refresh()); },
+    designView, showDesign, showPrototype: () => setDesignPageId(null), uploadDesign,
   }}>{children}
-    {sketchOpen && <SketchImport key={session.currentProjectId} projectId={session.currentProjectId} busy={busy} onCancel={()=>setSketchOpen(false)} onImport={importSketch}/>}
+    {sketchOpen && <SketchImport key={session.currentProjectId} projectId={session.currentProjectId} pages={pages} initialPageId={sketchTarget} busy={busy} onCancel={()=>setSketchOpen(false)} onImport={importSketch}/>}
     {imageOpen && <ImagePrototype key={session.currentProjectId} projectId={session.currentProjectId} busy={busy} onCancel={() => setImageOpen(false)} onImport={(name, document) => run(async () => {
       const result = await api<{ page: PageInfo }>(`/api/projects/${encodeURIComponent(session.currentProjectId)}/image-prototype/import`, 'POST', { name, document });
       setImageOpen(false); await refresh(); await openPage(result.page.id);
@@ -179,7 +201,7 @@ function ProjectSwitcher() {
 }
 
 export function PageTree() {
-  const { pages, busy, session, name, pageAction, selectPage, refresh } = useManager();
+  const { pages, busy, session, name, pageAction, selectPage, refresh, showDesign } = useManager();
   const [expanded, setExpanded] = useState<React.Key[]>([]);
   useEffect(() => {
     const parents: string[] = [];
@@ -188,13 +210,13 @@ export function PageTree() {
     setExpanded(previous => [...new Set([...previous, ...parents])]);
   }, [pages, session.currentPageId]);
   function nodes(parentId: string | null): DataNode[] {
-    return pages.filter(page => page.parentId === parentId).map(page => ({ key: page.id, icon: <FileOutlined/>, title: <span className="page-tree-title"><span title={page.name}>{page.name}</span><Dropdown trigger={['click']} menu={{ items: ([
-      { key:'import-report',label:'查看导入报告' }, { type:'divider' }, { key: 'child', label: '新建子页面' }, { key: 'rename', label: '重命名页面' }, { key: 'duplicate', label: '复制此页' }, { key: 'move', label: '移动页面' },
+    return pages.filter(page => page.parentId === parentId).map(page => ({ key: page.id, icon: <FileOutlined/>, title: <span className="page-tree-title"><span title={page.name}>{page.name}</span>{page.uiDesignRequired && <button className={`page-design-entry ${page.uiDesignCount ? 'uploaded' : 'pending'}`} title={page.uiDesignCount ? '查看 UI 设计稿' : '待设计 · 上传 UI 设计稿'} aria-label={`查看 UI 设计稿 ${page.name}`} disabled={busy} onClick={event => { event.stopPropagation(); showDesign(page.id); }}><PictureOutlined/>{!page.uiDesignCount && <small>待设计</small>}</button>}<Dropdown trigger={['click']} menu={{ items: ([
+      { key: 'design-required', label: page.uiDesignRequired ? '设为无需 UI 设计' : '需要 UI 设计' }, { type: 'divider' }, { key:'import-report',label:'查看导入报告' }, { type:'divider' }, { key: 'child', label: '新建子页面' }, { key: 'rename', label: '重命名页面' }, { key: 'duplicate', label: '复制此页' }, { key: 'move', label: '移动页面' },
       { type: 'divider' }, { key: 'up', label: '上移' }, { key: 'down', label: '下移' }, { type: 'divider' }, { key: 'delete', label: '删除页面', danger: true },
     ] as NonNullable<MenuProps['items']>).map(item=>!item || item.type==='divider' || item.key==='import-report'?item:{...item,disabled:!session.can(item.key === 'delete' ? 'page.delete' : 'page.manage')}), onClick: info => { info.domEvent.stopPropagation(); pageAction(info.key, page); } }}><button aria-label={`页面操作 ${page.name}`} disabled={busy} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><MoreOutlined/></button></Dropdown></span>, children: nodes(page.id) }));
   }
   return <div className="page-manager"><div className="page-project-controls"><ProjectSwitcher/></div><div className="page-manager-heading"><span>项目页面 <span>{pages.length}</span></span><div><button aria-label="刷新页面列表" title="刷新页面列表" disabled={busy} onClick={refresh}><ReloadOutlined/></button><button aria-label="新建根页面" title="新建页面" disabled={busy || !session.can('page.manage')} onClick={() => name({ kind: 'new-page' })}><PlusOutlined/></button></div></div>
-    <Spin spinning={busy}><Tree className="prototype-page-tree" blockNode showIcon showLine={{ showLeafIcon: false }} disabled={busy} treeData={nodes(null)} selectedKeys={[session.currentPageId]} expandedKeys={expanded} onExpand={keys => setExpanded(keys)} onSelect={keys => { if (keys[0] && keys[0] !== session.currentPageId) selectPage(String(keys[0])); }}/></Spin>
+    <Spin spinning={busy}><Tree className="prototype-page-tree" blockNode showIcon showLine={{ showLeafIcon: false }} disabled={busy} treeData={nodes(null)} selectedKeys={[session.currentPageId]} expandedKeys={expanded} onExpand={keys => setExpanded(keys)} onSelect={(_keys, info) => selectPage(String(info.node.key))}/></Spin>
     <p className="page-tree-help">点击页面名称切换画布。<br/>通过右侧「···」管理子页面。</p><Button aria-label="新建页面" block size="small" icon={<PlusOutlined/>} disabled={busy || !session.can('page.manage')} onClick={() => name({ kind: 'new-page' })}>新建页面</Button>
   </div>;
 }

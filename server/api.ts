@@ -69,6 +69,13 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
     if (!parsed.success) return reply.code(400).send({ message: '页面修改内容不正确' });
     return manage(() => repository.updatePage(request.params.pageId, parsed.data), reply);
   });
+  app.get<{ Params: { pageId: string } }>('/api/pages/:pageId/design', async (request, reply) => manage(() => ({ ...repository.designMetadata(request.params.pageId), boards: repository.listDesignBoards(request.params.pageId) }), reply));
+  app.patch<{ Params: { pageId: string } }>('/api/pages/:pageId/design', async (request, reply) => {
+    const parsed = z.object({ required: z.boolean() }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ message: '请选择 UI 交付方式' });
+    return manage(() => repository.setDesignRequired(request.params.pageId, parsed.data.required), reply);
+  });
+  app.get<{ Params: { pageId: string; designId: string } }>('/api/pages/:pageId/design/:designId', async (request, reply) => manage(() => repository.readDesignBoard(request.params.pageId, request.params.designId), reply));
   app.post<{ Params: { pageId: string } }>('/api/pages/:pageId/duplicate', async (request, reply) => manage(() => repository.duplicatePage(request.params.pageId), reply));
   app.delete<{ Params: { pageId: string } }>('/api/pages/:pageId', async (request, reply) => manage(() => repository.deletePage(request.params.pageId), reply));
   app.get<{ Params: { pageId: string } }>('/api/pages/:pageId/document', async (request, reply) => {

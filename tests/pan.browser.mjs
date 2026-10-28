@@ -48,9 +48,20 @@ try {
   await drag(view.x + 28, view.y + 28, 30, -25, 'middle'); moved(beforeMiddle, await bounds(), 30, -25);
   assert.equal(await page.locator('.viewport.panning').count(), 0);
   await page.mouse.move(view.x + 30, view.y + 30);
-  const beforeWheel = await bounds(); await page.mouse.wheel(40, 60);
+  const beforeWheel = await bounds();
+  await page.keyboard.down('Shift'); await page.mouse.wheel(40, 60); await page.keyboard.up('Shift');
   await page.waitForFunction(expected => Math.abs(document.querySelector('.artboard').getBoundingClientRect().y - expected) < 2, beforeWheel.y - 60);
   moved(beforeWheel, await bounds(), -40, -60);
+  await button('适应画布').click(); moved(origin, await bounds(), 0, 0);
+  const anchor = { x: view.x + view.width / 2 + 40, y: view.y + view.height / 2 };
+  const beforeZoom = await bounds();
+  await page.mouse.move(anchor.x, anchor.y); await page.mouse.wheel(0, -300);
+  await page.waitForFunction(width => document.querySelector('.artboard').getBoundingClientRect().width > width, beforeZoom.width);
+  const afterZoom = await bounds();
+  const ratio = afterZoom.width / beforeZoom.width;
+  assert.ok(ratio > 1 && ratio <= 1.05 + 1e-6, '直接滚轮缩放，单次最多放大 5%');
+  assert.ok(Math.abs((anchor.x - beforeZoom.x) - (anchor.x - afterZoom.x) / ratio) < 2, '缩放时保持鼠标下的内容位置');
+  assert.ok(Math.abs((anchor.y - beforeZoom.y) - (anchor.y - afterZoom.y) / ratio) < 2, '缩放时保持鼠标下的内容高度');
   await button('适应画布').click(); moved(origin, await bounds(), 0, 0);
   // 平移后的选框和元素拖动仍然对应文档坐标。
   await button('平移工具（按住空格）').click(); await drag(view.x + 28, view.y + 28, 25, 20);

@@ -1,4 +1,5 @@
 import { createVersionRepository } from './versions.js';
+import { createDesignRepository } from './designs.js';
 import { and, asc, eq } from 'drizzle-orm';
 import { seedDocument, type PrototypeDocument } from '../../shared/model.js';
 import { projects, pages, documents } from './schema.js';
@@ -10,6 +11,7 @@ export class ManagementError extends Error {
   constructor(message: string, public statusCode = 400) { super(message); }
 }
 export function createRepository(db: AppDatabase) {
+  const designs = createDesignRepository(db);
   function initialize() {
     db.transaction(tx => {
       if (tx.select().from(projects).limit(1).get()) return;
@@ -33,7 +35,7 @@ export function createRepository(db: AppDatabase) {
     return { ...document, page, project, capabilities: { persistence: true, filesystem: false } };
   }
   const listProjects = () => db.select().from(projects).orderBy(asc(projects.createdAt)).all();
-  const listPages = (projectId: string) => db.select().from(pages).where(eq(pages.projectId, projectId)).orderBy(asc(pages.position), asc(pages.createdAt)).all();
+  const listPages = (projectId: string) => db.select().from(pages).where(eq(pages.projectId, projectId)).orderBy(asc(pages.position), asc(pages.createdAt)).all().map(page => ({ ...page, ...designs.designMetadata(page.id) }));
   function descendants(id: string, items: ReturnType<typeof listPages>) {
     const ids = new Set([id]);
     for (let changed = true; changed;) {
@@ -138,6 +140,7 @@ export function createRepository(db: AppDatabase) {
       if (!original || !document) throw new ManagementError('页面不存在', 404);
       const copy = createPage(original.projectId, `${original.name.slice(0, 117)} 副本`, original.parentId);
       tx.update(documents).set({ content: structuredClone(document.document) }).where(eq(documents.pageId, copy.id)).run();
+      designs.copyDesigns(id, copy.id);
       return copy;
     });
   }
@@ -168,7 +171,7 @@ export function createRepository(db: AppDatabase) {
     });
   }
   return {
-    ...createVersionRepository(db), initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
+    ...createVersionRepository(db), ...designs, initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
     createProject, renameProject, deleteProject, createPage, importPage, updatePage, duplicatePage, deletePage,
   };
 }
