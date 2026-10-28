@@ -13,7 +13,7 @@ try {
   await page.goto(`${process.env.TEST_URL}/design`);await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.node[data-id="title"]').click();
   await page.getByRole('textbox',{name:'文字内容',exact:true}).fill('原页面内容保留');
-  async function openImport(){await page.getByRole('button',{name:'项目操作',exact:true}).click();await page.getByRole('menuitem',{name:'导入 Sketch',exact:true}).click();}
+  async function openImport(){await page.getByRole('button',{name:'添加页面',exact:true}).click();await page.getByRole('menuitem',{name:'导入 Sketch',exact:true}).click();}
   await openImport();
   await page.getByLabel('Sketch 文件',{exact:true}).setInputFiles({name:'错误.sketch',mimeType:'application/octet-stream',buffer:Buffer.from('not zip')});
   await page.getByRole('alert').getByText(/无法读取 Sketch 文件/).waitFor();

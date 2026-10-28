@@ -56,6 +56,14 @@ try {
   assert.deepEqual(await headingStyle(), prototypeHeadingStyle, '设计稿标题栏与原型标题栏使用相同样式');
   assert.equal(await page.locator('.ui-design-heading .ant-btn:not(.ant-btn-sm)').count(), 0);
   assert.equal(await page.locator('.ui-design-heading .ant-select-sm').count(), 1);
+  await page.getByRole('region', { name: '设计稿画布' }).focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('.editor-layout.canvas-expanded').count(), 1);
+  assert.equal(await page.locator('.left-panel').isVisible(), false);
+  const columns = await page.locator('.editor-layout').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  assert.equal(columns, 1, '设计稿全屏铺满单列');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.locator('.editor-layout.canvas-expanded').count(), 0);
   await page.screenshot({ path: 'test-results/page-design-compact-heading.png', animations: 'disabled' });
   assert.equal(await page.getByRole('button', { name: 'AI 问设计', exact: true }).count(), 0);
   const scene = page.locator('.ui-design-scene');

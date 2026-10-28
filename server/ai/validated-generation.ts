@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { PrototypeDocument } from '../../shared/model.js';
 import { applyAiResult, resultSchema } from './operations.js';
-import { generate } from './provider.js';
+import { generate, type ImageInput } from './provider.js';
 
 export function validationDetails(error: unknown) {
   if (error instanceof z.ZodError) return error.issues.slice(0, 6).map(issue => ({
@@ -17,13 +17,14 @@ export async function generateValidated(
   onRepair: (details: ReturnType<typeof validationDetails>) => void,
   invoke: typeof generate = generate,
   validate?: (document: PrototypeDocument) => void,
+  image?: ImageInput,
 ) {
   let nextPrompt = prompt;
   let hadChanges = false;
   for (let attempt = 0; attempt < 2; attempt++) {
     signal.throwIfAborted();
     // Transport/login failures are not validation errors and are never retried here.
-    const generated = await invoke(nextPrompt, signal, onStatus, onText);
+    const generated = await invoke(nextPrompt, signal, onStatus, onText, image);
     signal.throwIfAborted();
     try {
       const value = resultSchema.parse(JSON.parse(generated.raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, '')));

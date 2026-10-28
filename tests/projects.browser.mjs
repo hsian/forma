@@ -42,7 +42,8 @@ try {
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.page-tree-title>span').filter({ hasText: /^用户管理$/ }).waitFor();
   const initial = await (await page.request.get(`${base}/api/bootstrap`)).json();
-  await button('新建页面').click();
+  await button('添加页面').click();
+  await page.getByRole('menuitem', { name: '新建页面', exact: true }).click();
   await enterName('成员详情'); await current('成员详情');
   const detailId = await selectedId();
   assert.equal(await page.locator('.node').count(), 0);

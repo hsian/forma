@@ -267,14 +267,22 @@ export default function App() {
   useEffect(() => {
     function keyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void flush(); return; }
-      if (server !== 'ready' || managing || openingPreview || designView) return;
-      if (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'Backquote' || e.key === '`' || e.key === '~')) {
+      if (server !== 'ready' || managing || openingPreview) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const overlayOpen = [...document.querySelectorAll('[role="dialog"],[role="menu"],[role="listbox"],.ant-image-preview-wrap')].some(element => element.getClientRects().length);
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing && !overlayOpen && !target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"],.ant-select,.ai-panel')) {
+        e.preventDefault();
+        if (!e.repeat) setCanvasExpanded(value => !value);
+        return;
+      }
+      if (!designView && e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'Backquote' || e.key === '`' || e.key === '~')) {
         e.preventDefault();
         if (!e.repeat && !e.isComposing) setAiVisible(value => !value);
         return;
       }
       if (e.key === 'Escape' && placingAnnotation && !e.isComposing) { e.preventDefault(); setPlacingAnnotation(null); return; }
-      if (e.key === 'Escape' && canvasExpanded && !e.isComposing && ![...document.querySelectorAll('[role="dialog"]')].some(el => el.getClientRects().length)) { e.preventDefault(); setCanvasExpanded(false); return; }
+      if (e.key === 'Escape' && canvasExpanded && !e.isComposing && !overlayOpen) { e.preventDefault(); setCanvasExpanded(false); return; }
+      if (designView) return;
       if ((e.target as HTMLElement).closest('.ai-panel')) return;
       if ((e.target as HTMLElement).closest('input,textarea,[contenteditable="true"],.ant-select')) return;
       if (!session.canEdit) return;

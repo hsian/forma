@@ -1,5 +1,6 @@
 .prototype-surface{display:flex;flex-direction:column;flex:1;min-height:0;position:relative}
 .editor-layout.viewing-ui-design{grid-template-columns:var(--left-panel-width,228px) minmax(240px,1fr)}
+.editor-layout.canvas-expanded.viewing-ui-design{grid-template-columns:minmax(0,1fr)}
 .editor-layout.viewing-ui-design>.right-panel{display:none}
 .prototype-surface[hidden]{display:none}
 .page-delivery-tabs{display:flex;align-items:center;gap:24px;height:45px;padding:0 22px;background:#fff;border-bottom:1px solid #e8eaf0;flex-shrink:0}

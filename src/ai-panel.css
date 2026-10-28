@@ -29,3 +29,9 @@
 .ai-inline-notice>button>span:last-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .ai-inline-notice.is-error{color:#b76d56}
 @media(max-width:800px){.ai-panel{width:calc(100% - 24px);bottom:58px}.ai-composer{padding:7px}.ai-input-row{gap:3px}.ai-input-row>.ant-btn{width:30px;height:34px}.ai-input-mark{display:none}.ai-inline-notice{padding-left:3px}.ai-history-header{padding-left:10px;gap:6px}.ai-history-header>span.ai-provider{display:none}.ai-messages{padding:8px 10px}}
+
+.ai-image-attachment{position:relative;display:inline-flex;margin:5px 8px 6px 4px;vertical-align:top}
+.ai-image-attachment .ant-image{overflow:hidden;border:1px solid #e7e9f0;border-radius:7px;background:#fff;cursor:zoom-in}
+.ai-image-attachment .ant-image-img{object-fit:cover}
+.ai-image-attachment>.ant-btn{position:absolute;z-index:1;top:-6px;right:-6px;width:16px;height:16px;min-width:16px;padding:0;border:1px solid #fff;border-radius:50%;background:#e9ebef;color:#4b5563;font-size:9px;box-shadow:0 1px 3px #0002}
+.ai-image-attachment>.ant-btn:hover{background:#dce0e7!important;color:#273247!important}

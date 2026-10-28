@@ -195,13 +195,13 @@ function ProjectSwitcher() {
   const disabled = busy || session.server !== 'ready';
   return <div className="project-switcher"><Select aria-label="当前项目" variant="borderless" showSearch optionFilterProp="label" disabled={disabled} value={session.currentProjectId || undefined} placeholder={session.projectName}
     options={projects.length ? projects.map(project => ({ value: project.id, label: project.name })) : session.currentProjectId ? [{ value: session.currentProjectId, label: session.projectName }] : []} onChange={selectProject}/>
-    <Dropdown trigger={['click']} menu={{ items: [{ key: 'image', label: '图片生成原型', disabled: !session.can('page.manage') || !session.can('prototype.edit') }, { key: 'sketch', label: '导入 Sketch', disabled: !session.can('sketch.import') }, { type: 'divider' }, { key: 'rename', label: '重命名项目', disabled: !session.can('project.update') }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || !session.can('project.delete') }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
+    <Dropdown trigger={['click']} menu={{ items: [{ key: 'rename', label: '重命名项目', disabled: !session.can('project.update') }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || !session.can('project.delete') }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
     <button aria-label="新建项目" title="新建项目" disabled={disabled || !session.canCreateProject} onClick={() => name({ kind: 'new-project' })}><PlusOutlined/></button>
   </div>;
 }
 
 export function PageTree() {
-  const { pages, busy, session, name, pageAction, selectPage, refresh, showDesign } = useManager();
+  const { pages, busy, session, name, pageAction, projectAction, selectPage, refresh, showDesign } = useManager();
   const [expanded, setExpanded] = useState<React.Key[]>([]);
   useEffect(() => {
     const parents: string[] = [];
@@ -215,7 +215,11 @@ export function PageTree() {
       { type: 'divider' }, { key: 'up', label: '上移' }, { key: 'down', label: '下移' }, { type: 'divider' }, { key: 'delete', label: '删除页面', danger: true },
     ] as NonNullable<MenuProps['items']>).map(item=>!item || item.type==='divider' || item.key==='import-report'?item:{...item,disabled:!session.can(item.key === 'delete' ? 'page.delete' : 'page.manage')}), onClick: info => { info.domEvent.stopPropagation(); pageAction(info.key, page); } }}><button aria-label={`页面操作 ${page.name}`} disabled={busy} onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}><MoreOutlined/></button></Dropdown></span>, children: nodes(page.id) }));
   }
-  return <div className="page-manager"><div className="page-project-controls"><ProjectSwitcher/></div><div className="page-manager-heading"><span>项目页面 <span>{pages.length}</span></span><div><button aria-label="刷新页面列表" title="刷新页面列表" disabled={busy} onClick={refresh}><ReloadOutlined/></button><button aria-label="新建根页面" title="新建页面" disabled={busy || !session.can('page.manage')} onClick={() => name({ kind: 'new-page' })}><PlusOutlined/></button></div></div>
+  return <div className="page-manager"><div className="page-project-controls"><ProjectSwitcher/></div><div className="page-manager-heading"><span>项目页面 <span>{pages.length}</span></span><div><button aria-label="刷新页面列表" title="刷新页面列表" disabled={busy} onClick={refresh}><ReloadOutlined/></button><Dropdown trigger={['click']} menu={{ items: [
+      { key: 'new-page', label: '新建页面', disabled: !session.can('page.manage') },
+      { key: 'image', label: '图片生成原型', disabled: !session.can('page.manage') || !session.can('prototype.edit') },
+      { key: 'sketch', label: '导入 Sketch', disabled: !session.can('sketch.import') },
+    ], onClick: info => info.key === 'new-page' ? name({ kind: 'new-page' }) : projectAction(info.key) }}><button aria-label="添加页面" title="添加页面" disabled={busy || session.server !== 'ready' || (!session.can('page.manage') && !session.can('sketch.import'))}><PlusOutlined/></button></Dropdown></div></div>
     <Spin spinning={busy}><Tree className="prototype-page-tree" blockNode showIcon showLine={{ showLeafIcon: false }} disabled={busy} treeData={nodes(null)} selectedKeys={[session.currentPageId]} expandedKeys={expanded} onExpand={keys => setExpanded(keys)} onSelect={(_keys, info) => selectPage(String(info.node.key))}/></Spin>
     <p className="page-tree-help">点击页面名称切换画布。<br/>通过右侧「···」管理子页面。</p><Button aria-label="新建页面" block size="small" icon={<PlusOutlined/>} disabled={busy || !session.can('page.manage')} onClick={() => name({ kind: 'new-page' })}>新建页面</Button>
   </div>;

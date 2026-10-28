@@ -15,7 +15,7 @@ try {
   await page.goto(`${process.env.TEST_URL}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   const source = await page.locator('.artboard').first().screenshot({ path: 'test-results/image-prototype-source.png' });
   const original = (await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json()).document;
-  await button('项目操作').click(); await page.getByRole('menuitem', { name: '图片生成原型', exact: true }).click();
+  await button('添加页面').click(); await page.getByRole('menuitem', { name: '图片生成原型', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await page.getByLabel('原型图片', { exact: true }).setInputFiles({ name: '坏图.png', mimeType: 'image/png', buffer: Buffer.from('bad') });
   await dialog.getByRole('alert').waitFor(); assert.equal(await button('生成可编辑原型').isDisabled(), true);
@@ -55,7 +55,7 @@ try {
     // Render a previously generated real result without making another model call.
     const real = JSON.parse(await readFile(process.env.IMAGE_PROTOTYPE_REAL_RESULT, 'utf8'));
     await page.route('**/image-prototype/generate', route => route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: JSON.stringify(real) + '\n' }));
-    await button('项目操作').click(); await page.getByRole('menuitem', { name: '图片生成原型', exact: true }).click();
+    await button('添加页面').click(); await page.getByRole('menuitem', { name: '图片生成原型', exact: true }).click();
     await page.getByLabel('原型图片', { exact: true }).setInputFiles({ name: '真实模型试跑.png', mimeType: 'image/png', buffer: source });
     await button('生成可编辑原型').click();
     await dialog.getByText(`生成结果 · ${real.document.elements.length} 个可编辑元素`, { exact: true }).waitFor();

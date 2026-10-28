@@ -1,11 +1,12 @@
 import { randomId } from '../shared/uuid';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Tooltip } from 'antd';
-import { MinusOutlined, CommentOutlined, SendOutlined, StopOutlined, RobotOutlined, UndoOutlined } from '@ant-design/icons';
+import { MinusOutlined, CommentOutlined, SendOutlined, StopOutlined, RobotOutlined } from '@ant-design/icons';
 import { canonicalDocument, type AiEvent, type AiMessage } from '../shared/ai';
 import type { PrototypeDocument } from '../shared/model';
 import type { DocumentSession } from './useDocumentSession';
 import { useEditor } from './store';
+import { useAiImage } from './AiImageAttachment';
 import './ai-panel.css';
 
 function preference(key: string, fallback: string) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
@@ -20,16 +21,14 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
   const [live, setLive] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const attachment = useAiImage(busy || loading || !session.canEdit);
   const [config, setConfig] = useState<{ provider: string; codex: boolean; claude: boolean } | null>(null);
-  const [lastChange, setLastChange] = useState<{ id: string; before: string; after: string } | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const controller = useRef<AbortController | null>(null); const sending = useRef(false); const mounted = useRef(false);
   const pageId = session.currentPageId;
   useEffect(() => { if (!session.canEdit) controller.current?.abort(); }, [session.canEdit]);
   const selectedNames = doc.elements.filter(e => selected.includes(e.id)).map(e => e.name);
   const currentDialog = doc.dialogs?.find(d => d.id === dialogId);
-  const canonical = canonicalDocument(doc);
-  const undoReady = lastChange && canonical === lastChange.after && canonicalDocument(useEditor.getState().past.at(-1)) === lastChange.before;
   useEffect(() => { try { localStorage.setItem(`forma:ai-draft:${pageId}`, draft); } catch {} }, [pageId, draft]);
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [messages, live, status, open, visible]);
   async function loadMessages(signal?: AbortSignal) {
@@ -49,8 +48,8 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
     await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/messages/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
   }
   async function submit() {
-    if (sending.current || !draft.trim() || loading || session.server !== 'ready' || !session.canEdit) return;
-    const prompt = draft.trim(); const selectedIds = [...selected];
+    if (sending.current || (!draft.trim() && !attachment.image) || attachment.reading || loading || session.server !== 'ready' || !session.canEdit) return;
+    const prompt = draft.trim() || '请结合当前原型分析这张图片。'; const image = attachment.image?.url; const selectedIds = [...selected];
     const abort = new AbortController(); controller.current = abort; sending.current = true;
     setBusy(true); setError(''); setLive(''); setStatus('正在保存当前原型'); setDraft('');
     let received = false;
@@ -61,8 +60,8 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
       if (!await session.flush()) throw Error('当前页面尚未保存，请先处理保存失败或冲突。');
       if (abort.signal.aborted || !mounted.current) return;
       const source = structuredClone(useEditor.getState().doc); const fingerprint = canonicalDocument(source);
-      setMessages(old => [...old, { id: randomId(), role: 'user', content: prompt, status: 'done', provider: '', createdAt: Date.now() }]);
-      const response = await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/turn`, { method: 'POST', signal: abort.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, selectedIds, dialogId, baseDocument: source }) });
+      setMessages(old => [...old, { id: randomId(), role: 'user', content: prompt + (image ? '\n[附图，仅供本轮参考]' : ''), status: 'done', provider: '', createdAt: Date.now() }]);
+      const response = await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/turn`, { method: 'POST', signal: abort.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, image, selectedIds, dialogId, baseDocument: source }) });
       if (!response.ok) { const value = await response.json(); throw Error(value.message || '发送失败'); }
       const reader = response.body?.getReader(); if (!reader) throw Error('未收到有效响应');
       const decoder = new TextDecoder(); let buffer = '';
@@ -82,11 +81,11 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
               const document: PrototypeDocument = structuredClone(item.document);
               useEditor.getState().commit(next => { Object.assign(next, document); next.dialogs = document.dialogs; });
               useEditor.getState().select(item.changedIds.filter(id => document.elements.find(e => e.id === id)?.parentId === dialogId));
-              message.status = 'applied'; setLastChange({ id: message.id, before: fingerprint, after: canonicalDocument(useEditor.getState().doc) });
+              message.status = 'applied';
             }
             await acknowledge(message.id, message.status).catch(() => {});
           }
-          setMessages(old => [...old, message]); setLive('');
+          setMessages(old => [...old, message]); setLive(''); if (message.status !== 'conflict') attachment.clear();
         }
       }
       try {
@@ -115,13 +114,12 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
   const latest = messages.at(-1);
   const errorInHistory = latest?.role === 'assistant' && latest.content === error && latest.status === 'error';
   const notice = error || (busy ? status || 'AI 正在处理' : latest?.role === 'assistant' ? `${labels[latest.status] ? labels[latest.status] + ' · ' : ''}${latest.content}` : '');
-  const undoButton = lastChange && <Tooltip title={undoReady ? '撤销这一轮 AI 修改' : '已有后续编辑，可用 Ctrl+Z 逐步撤销'}><Button type="text" size="small" aria-label="撤销本轮 AI 修改" disabled={!undoReady || busy || !session.canEdit} icon={<UndoOutlined/>} onClick={() => { if (!undoReady || !lastChange) return; void (async () => { const finish = await session.beginAi(); if (!finish) return; try { if (canonicalDocument(useEditor.getState().doc) !== lastChange.after) return; useEditor.getState().undo(); await acknowledge(lastChange.id, 'reverted'); await loadMessages(); setLastChange(null); } catch {} finally { finish(); } })(); }}/></Tooltip>;
-  return <section id="ai-assistant-panel" className={`ai-panel ${open ? 'history-open' : ''}`} aria-label="AI 助手" aria-keyshortcuts="Control+`" hidden={!visible}>
+  return <section id="ai-assistant-panel" className={`ai-panel ${open ? 'history-open' : ''}`} aria-label="AI 助手" aria-busy={busy || loading || attachment.reading} aria-keyshortcuts="Control+`" hidden={!visible}>
     <div className="ai-history" id="ai-panel-history" hidden={!open}>
       <div className="ai-history-header"><strong>AI 对话</strong><span title={scope}>{scope}</span><span className="ai-provider">{providerLabel}</span><Button type="text" size="small" aria-label="收起 AI 对话记录" title="收起对话记录" icon={<MinusOutlined/>} onClick={() => setOpen(false)}/></div>
       <div className="ai-messages" ref={log} role="log" aria-label="AI 对话记录" aria-live="polite">{!messages.length && !busy && <div className="ai-welcome">描述想修改的内容，对话记录会显示在这里。</div>}{messages.map(message => <div key={message.id} className={`ai-message ${message.role}`}><div className="ai-message-heading">{message.role === 'user' ? '你' : 'AI 助手'}<span>{message.provider ? `${message.provider} · ` : ''}{labels[message.status] || ''}</span></div><div className="ai-message-text" role={message.status === 'error' ? 'alert' : undefined}>{message.content || '处理已中断，可重新发送。'}</div></div>)}{busy && <div className="ai-live"><span className="ai-working-dot"/>{live || status || '正在处理'}</div>}{error && !errorInHistory && <div className="ai-error" role="alert">{error}</div>}</div>
     </div>
-    <div className="ai-composer"><div className="ai-input-row"><Tooltip title={scope}><span className="ai-input-mark" aria-label={scope}><RobotOutlined/></span></Tooltip><Input.TextArea aria-label="AI 修改要求" placeholder={selected.length ? `修改选中的${selected.length}个元素…` : '描述你想修改的原型…'} value={draft} autoSize={{ minRows: 1, maxRows: 3 }} maxLength={6000} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}/>{undoButton}<Tooltip title={open ? '收起对话记录' : '查看对话记录'}><Button type="text" aria-label={open ? '折叠 AI 对话记录' : '展开 AI 对话记录'} aria-expanded={open} aria-controls="ai-panel-history" icon={<CommentOutlined/>} onClick={() => setOpen(value => !value)}/></Tooltip>{busy ? <Tooltip title="停止生成"><Button aria-label="停止 AI 生成" icon={<StopOutlined/>} onClick={() => { controller.current?.abort(); }}/></Tooltip> : <Tooltip title="发送 · Enter（Shift+Enter 换行）"><Button type="primary" aria-label="发送 AI 修改要求" disabled={!draft.trim() || loading || session.server !== 'ready' || !session.canEdit} icon={<SendOutlined/>} onClick={() => { void submit(); }}/></Tooltip>}</div>
+    <div className="ai-composer">{attachment.preview}<div className="ai-input-row"><Tooltip title={scope}><span className="ai-input-mark" aria-label={scope}><RobotOutlined/></span></Tooltip><Input.TextArea onPaste={attachment.onPaste} aria-label="AI 修改要求" placeholder={selected.length ? `修改选中的${selected.length}个元素…` : '描述你想修改的原型…'} value={draft} autoSize={{ minRows: 1, maxRows: 3 }} maxLength={6000} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}/><Tooltip title={open ? '收起对话记录' : '查看对话记录'}><Button type="text" aria-label={open ? '折叠 AI 对话记录' : '展开 AI 对话记录'} aria-expanded={open} aria-controls="ai-panel-history" icon={<CommentOutlined/>} onClick={() => setOpen(value => !value)}/></Tooltip>{busy ? <Tooltip title="停止生成"><Button aria-label="停止 AI 生成" icon={<StopOutlined/>} onClick={() => { controller.current?.abort(); }}/></Tooltip> : <Tooltip title="发送 · Enter（Shift+Enter 换行）"><Button type="primary" aria-label="发送 AI 修改要求" disabled={(!draft.trim() && !attachment.image) || attachment.reading || loading || session.server !== 'ready' || !session.canEdit} icon={<SendOutlined/>} onClick={() => { void submit(); }}/></Tooltip>}</div>
       {notice && !open && <div className={`ai-inline-notice ${error ? 'is-error' : ''}`} role={error ? 'alert' : 'status'} aria-live="polite"><button title={notice} onClick={() => setOpen(true)}>{busy && <span className="ai-working-dot"/>}<span>{notice}</span></button></div>}
     </div>
   </section>;
