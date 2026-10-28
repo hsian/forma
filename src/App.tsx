@@ -4,6 +4,7 @@ import { AppstoreOutlined, BorderOutlined, CopyOutlined, DeleteOutlined, DownOut
 import Moveable from 'react-moveable';
 import Selecto from 'react-selecto';
 import { ElementView } from './ElementView';
+import { clipboardImages, maxImageDocumentBytes } from './clipboard-images';
 import { ComponentLibrary, elementSymbols as symbols } from './ComponentLibrary';
 import { AntdProperties } from './AntdProperties';
 import { AiPanel } from './AiPanel';
@@ -54,6 +55,7 @@ export default function App() {
   const page = useRef<HTMLDivElement>(null);
   const moveable = useRef<Moveable>(null);
   const clipboard = useRef<PrototypeElement[]>([]);
+  const imagePasteEpoch = useRef(0);
   const pan = useRef<{ x: number; y: number; offsetX: number; offsetY: number; pointerId: number } | null>(null);
 
   useEffect(() => {
@@ -69,6 +71,9 @@ export default function App() {
   useEffect(() => { setEditingDialogId(null); setEditing(null); setAnnotationId(null); setPlacingAnnotation(null); }, [currentPageId]);
   const editingDialog = doc.dialogs?.find(dialog => dialog.id === editingDialogId);
   const surface = editingDialog || doc;
+  const pasteContext = useRef({ currentPageId, editingDialogId, canvasEpoch: session.canvasEpoch, canEdit: session.canEdit, blocked: false });
+  pasteContext.current = { currentPageId, editingDialogId, canvasEpoch: session.canvasEpoch, canEdit: session.canEdit, blocked: server !== 'ready' || managing || openingPreview || help };
+  useEffect(() => { imagePasteEpoch.current++; return () => { imagePasteEpoch.current++; }; }, [currentPageId, editingDialogId, session.canvasEpoch]);
   const sceneWidth = Math.max(doc.width, editingDialog ? editingDialog.width + 128 : 0);
   const sceneHeight = Math.max(doc.height, editingDialog ? editingDialog.height + 200 : 0);
   const elements = doc.elements.filter(e => e.parentId === editingDialog?.id);
@@ -117,6 +122,45 @@ export default function App() {
   function copy() { clipboard.current = structuredClone(elements.filter(e => selected.includes(e.id))); }
   function paste() { const copies = clipboard.current.map(e => ({ ...structuredClone(e), id: crypto.randomUUID(), x: e.x + 24, y: e.y + 24, locked: false, parentId: editingDialog?.id, source: undefined, name: `${e.name} 副本` })); if (!copies.length) return; commit(d => { d.elements.push(...copies); }); select(copies.map(e => e.id)); clipboard.current = copies; }
   function duplicate() { copy(); paste(); }
+  useEffect(() => {
+    const ignoreClipboard = (target: EventTarget | null) => pasteContext.current.blocked || !pasteContext.current.canEdit ||
+      (target instanceof Element && !!target.closest('input,textarea,[contenteditable]:not([contenteditable="false"]),.ant-select,.ai-panel')) ||
+      [...document.querySelectorAll('[role="dialog"]')].some(el => el.getClientRects().length);
+    const onCopy = (event: ClipboardEvent) => {
+      if (ignoreClipboard(event.target) || !event.clipboardData || !selected.length) return;
+      copy();
+      event.preventDefault();
+      event.clipboardData.setData('application/x-forma-selection', 'local');
+      event.clipboardData.setData('text/plain', 'Forma 原型元素');
+    };
+    const onPaste = (event: ClipboardEvent) => {
+      if (ignoreClipboard(event.target) || !event.clipboardData) return;
+      const files = [...event.clipboardData.files].filter(file => file.type.startsWith('image/'));
+      if (!files.length) {
+        if (event.clipboardData.getData('application/x-forma-selection') === 'local') { event.preventDefault(); paste(); }
+        return;
+      }
+      event.preventDefault();
+      const stamp = imagePasteEpoch.current;
+      const context = { ...pasteContext.current };
+      const canvasRect = page.current?.getBoundingClientRect(), viewRect = viewport.current?.getBoundingClientRect();
+      let center = { x: surface.width / 2, y: surface.height / 2 };
+      if (canvasRect && viewRect && canvasRect.width && canvasRect.height) {
+        const left = Math.max(canvasRect.left, viewRect.left), right = Math.min(canvasRect.right, viewRect.right);
+        const top = Math.max(canvasRect.top, viewRect.top), bottom = Math.min(canvasRect.bottom, viewRect.bottom);
+        if (right > left && bottom > top) center = { x: ((left + right) / 2 - canvasRect.left) * surface.width / canvasRect.width, y: ((top + bottom) / 2 - canvasRect.top) * surface.height / canvasRect.height };
+      }
+      void clipboardImages(files, surface, center, editingDialog?.id).then(images => {
+        const latest = pasteContext.current;
+        if (stamp !== imagePasteEpoch.current || latest.currentPageId !== context.currentPageId || latest.editingDialogId !== context.editingDialogId || latest.canvasEpoch !== context.canvasEpoch || !latest.canEdit || latest.blocked || useEditor.getState().readOnly) return;
+        const document = useEditor.getState().doc;
+        if (new TextEncoder().encode(JSON.stringify({ ...document, elements: [...document.elements, ...images] })).length > maxImageDocumentBytes) throw Error('粘贴后页面内容超过 8MB，请压缩图片或减少页面内容');
+        commit(d => { d.elements.push(...images); }); select(images.map(image => image.id));
+      }).catch(error => { if (stamp === imagePasteEpoch.current) void message.error(error instanceof Error ? error.message : '图片粘贴失败'); });
+    };
+    window.addEventListener('copy', onCopy); window.addEventListener('paste', onPaste);
+    return () => { window.removeEventListener('copy', onCopy); window.removeEventListener('paste', onPaste); };
+  });
   function align(mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') {
     if (!editable.length) return;
     const minX = Math.min(...editable.map(e => e.x)), maxX = Math.max(...editable.map(e => e.x + e.width));
@@ -218,8 +262,6 @@ export default function App() {
       if (ctrl && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
       if (ctrl && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
       if (ctrl && e.key.toLowerCase() === 'a') { e.preventDefault(); select(elements.filter(e => !e.locked && !e.hidden).map(e => e.id)); }
-      if (ctrl && e.key.toLowerCase() === 'c') { e.preventDefault(); copy(); }
-      if (ctrl && e.key.toLowerCase() === 'v') { e.preventDefault(); paste(); }
       if (ctrl && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicate(); }
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); remove(); }
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); const step = e.shiftKey ? 10 : 1; commit(d => d.elements.forEach(el => { if (!selected.includes(el.id) || el.locked) return; el.x += e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0; el.y += e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0; })); }

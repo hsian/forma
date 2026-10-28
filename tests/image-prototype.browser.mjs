@@ -1,0 +1,73 @@
+import { authenticatedPage } from './browser-auth.mjs';
+import { createRequire } from 'node:module';
+import { resolve } from 'node:path';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const require = createRequire(process.env.PLAYWRIGHT_MODULE_ROOT ? resolve(process.env.PLAYWRIGHT_MODULE_ROOT, 'package.json') : import.meta.url);
+const { chromium } = require('playwright');
+if (!process.env.TEST_URL) throw Error('必须使用隔离测试服务');
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH });
+const page = await authenticatedPage(browser, { viewport: { width: 1600, height: 1000 } });
+const errors = []; page.on('pageerror', error => errors.push(error.message));
+const button = name => page.getByRole('button', { name, exact: true });
+const pages = async () => (await (await page.request.get(`${process.env.TEST_URL}/api/projects/default-project/pages`)).json()).pages;
+try {
+  await page.goto(`${process.env.TEST_URL}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  const source = await page.locator('.artboard').first().screenshot({ path: 'test-results/image-prototype-source.png' });
+  const original = (await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json()).document;
+  await button('项目操作').click(); await page.getByRole('menuitem', { name: '图片生成原型', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await page.getByLabel('原型图片', { exact: true }).setInputFiles({ name: '坏图.png', mimeType: 'image/png', buffer: Buffer.from('bad') });
+  await dialog.getByRole('alert').waitFor(); assert.equal(await button('生成可编辑原型').isDisabled(), true);
+  await page.getByLabel('原型图片', { exact: true }).setInputFiles({ name: '迁移示例.png', mimeType: 'image/png', buffer: source });
+  const prompt = page.getByRole('textbox', { name: '图片生成补充说明', exact: true });
+  await prompt.fill('延迟'); await button('生成可编辑原型').click(); await button('停止生成').waitFor(); await button('停止生成').click();
+  await button('生成可编辑原型').waitFor(); assert.equal((await pages()).length, 1);
+  await prompt.fill('无结果'); await button('生成可编辑原型').click();
+  await dialog.getByText(/没有生成可编辑/).waitFor(); assert.equal((await pages()).length, 1);
+  await prompt.fill('需要确认，滚动测试'); await button('生成可编辑原型').click();
+  await dialog.getByText('生成前需要补充的信息', { exact: true }).waitFor();
+  assert.equal(await button('补充后继续生成').isDisabled(), true);
+  assert.equal(await button('保存为新页面').isDisabled(), true);
+  assert.equal((await pages()).length, 1);
+  await page.getByRole('textbox', { name: '补充问题 1', exact: true }).fill('右侧操作列固定');
+  await page.screenshot({ path: 'test-results/image-prototype-clarification.png', animations: 'disabled' });
+  await button('补充后继续生成').click();
+  await dialog.getByText('生成结果 · 4 个可编辑元素', { exact: true }).waitFor();
+  assert.equal((await pages()).length, 1, '预览不创建页面');
+  await page.screenshot({ path: 'test-results/image-prototype-preview.png', animations: 'disabled' });
+  await button('保存为新页面').click(); await dialog.waitFor({ state: 'hidden' });
+  await page.locator('.node[data-id="image-title"]').getByText('旧系统用户管理', { exact: true }).waitFor();
+  const list = await pages(); assert.equal(list.length, 2);
+  const created = list.find(p => p.name === '迁移示例'); assert.ok(created);
+  await page.locator('.node[data-id="image-title"]').click();
+  const saved = page.waitForResponse(response => response.request().method() === 'PUT' && response.url().endsWith(`/api/pages/${created.id}/document`) && response.ok());
+  await page.getByRole('textbox', { name: '文字内容', exact: true }).fill('迁移后继续编辑');
+  await saved;
+  await page.reload(); await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await page.locator('.node[data-id="image-title"]').getByText('迁移后继续编辑', { exact: true }).waitFor();
+  const document = (await (await page.request.get(`${process.env.TEST_URL}/api/pages/${created.id}/document`)).json()).document;
+  assert.equal(document.elements.find(e => e.kind === 'table').table.rows[0].name, '张三');
+  assert.equal(document.elements.some(e => e.id === 'table_scroll_track'), false);
+  assert.deepEqual((await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json()).document, original);
+  await page.screenshot({ path: 'test-results/image-prototype-created.png', animations: 'disabled' });
+  if (process.env.IMAGE_PROTOTYPE_REAL_RESULT) {
+    // Render a previously generated real result without making another model call.
+    const real = JSON.parse(await readFile(process.env.IMAGE_PROTOTYPE_REAL_RESULT, 'utf8'));
+    await page.route('**/image-prototype/generate', route => route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: JSON.stringify(real) + '\n' }));
+    await button('项目操作').click(); await page.getByRole('menuitem', { name: '图片生成原型', exact: true }).click();
+    await page.getByLabel('原型图片', { exact: true }).setInputFiles({ name: '真实模型试跑.png', mimeType: 'image/png', buffer: source });
+    await button('生成可编辑原型').click();
+    await dialog.getByText(`生成结果 · ${real.document.elements.length} 个可编辑元素`, { exact: true }).waitFor();
+    await page.screenshot({ path: 'test-results/image-prototype-real-comparison.png', animations: 'disabled' });
+    await button('保存为新页面').click(); await dialog.waitFor({ state: 'hidden' });
+    await page.locator('.node').getByText('用户管理', { exact: true }).waitFor();
+    await page.screenshot({ path: 'test-results/image-prototype-real-created.png', animations: 'disabled' });
+  }
+  assert.deepEqual(errors, []);
+  console.log('PASS: 图片选择、坏图提示、停止、空结果保护、原图对照、保存新页、编辑和刷新恢复。视觉识别使用测试模型。');
+} catch (error) {
+  await page.screenshot({ path: 'test-results/image-prototype-failure.png' });
+  console.error(await page.getByRole('dialog').innerText().catch(() => 'dialog closed'));
+  throw error;
+} finally { await browser.close(); }

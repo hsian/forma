@@ -32,6 +32,8 @@ ${JSON.stringify(antdKinds.map(kind => ({ kind, name: antdCatalog[kind].componen
 上传使用本地模拟文件列表，表单只演示校验和提交。布局组件的条目代表容器示意，暂不支持把其他画布元素嵌套入布局容器；需要组合布局时使用元素坐标。modal/drawer 组件支持标题、正文和预览打开；需要可任意编辑的弹窗内容时使用 upsertDialog、parentId 和按钮 action=modal 的现有能力。
 按指定结构返回 reply 和 operations。reply 简短说明修改效果，不能在尚未应用时声称已经保存。`;
 
+export { system as aiSystem };
+
 export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthService) {
   const active = new Map<string, AbortController>();
   db.update(aiMessages).set({ status: 'error', content: '上次处理因服务重启中断，未自动应用。' }).where(eq(aiMessages.status, 'running')).run();

@@ -42,7 +42,7 @@ export function applyAiResult(source: PrototypeDocument, result: AiResult) {
       if (op.type === 'removeElement') doc.elements = doc.elements.filter(e => e.id !== op.targetId);
       else {
         const patch = parseProperties(elementPatch, properties, index);
-        const table = patch.table ? { columns: [], rows: [], pageSize: 5, ...target.table, ...patch.table } : target.table;
+        const table = patch.table ? { columns: [], rows: [], pageSize: 5, ...target.table, ...patch.table, ...(patch.table.appearance ? { appearance: { ...target.table?.appearance, ...patch.table.appearance } } : {}) } : target.table;
         const component = patch.component ? { ...target.component, ...patch.component } : target.component;
         Object.assign(target, patch);
         if (patch.table) target.table = table;

@@ -6,6 +6,7 @@ import { FileOutlined, MoreOutlined, PlusOutlined, ReloadOutlined } from '@ant-d
 import type { DataNode } from 'antd/es/tree';
 import type { ProjectInfo, PageInfo } from '../shared/projects';
 import { SketchImport } from './SketchImport';
+import { ImagePrototype } from './ImagePrototype';
 import type { SketchBoard } from './SketchImport';
 import type { DocumentSession } from './useDocumentSession';
 
@@ -44,6 +45,7 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [nameValue, setNameValue] = useState('');
   const [sketchOpen, setSketchOpen] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
   const [movePage, setMovePage] = useState<PageInfo | null>(null);
   const [moveParent, setMoveParent] = useState('__root__');
   async function refresh(projectId = session.currentProjectId) {
@@ -103,6 +105,7 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     });
   }
   function projectAction(key: string) {
+    if (key === 'image' && session.can('page.manage') && session.can('prototype.edit')) setImageOpen(true);
     if (key === 'sketch' && session.can('sketch.import')) setSketchOpen(true);
     if (key === 'rename') requestName({ kind: 'rename-project', targetId: session.currentProjectId }, session.projectName);
     if (key === 'delete') modal.confirm({
@@ -148,6 +151,11 @@ export function ProjectManagerProvider({ session, children, onBusyChange }: { se
     refresh: () => { void run(() => refresh()); },
   }}>{children}
     {sketchOpen && <SketchImport key={session.currentProjectId} projectId={session.currentProjectId} busy={busy} onCancel={()=>setSketchOpen(false)} onImport={importSketch}/>}
+    {imageOpen && <ImagePrototype key={session.currentProjectId} projectId={session.currentProjectId} busy={busy} onCancel={() => setImageOpen(false)} onImport={(name, document) => run(async () => {
+      const result = await api<{ page: PageInfo }>(`/api/projects/${encodeURIComponent(session.currentProjectId)}/image-prototype/import`, 'POST', { name, document });
+      setImageOpen(false); await refresh(); await openPage(result.page.id);
+      void message.success(`已创建「${result.page.name}」，可继续编辑组件和配置交互`);
+    })}/>}
     <Modal open={!!nameRequest} title={nameRequest?.kind === 'new-project' ? '新建项目' : nameRequest?.kind === 'rename-project' ? '重命名项目' : nameRequest?.kind === 'new-page' ? nameRequest.parentId ? '新建子页面' : '新建页面' : '重命名页面'} okText="确定" cancelText="取消" confirmLoading={busy} onOk={() => { void submitName(); }} onCancel={() => { if (!busy) setNameRequest(null); }} destroyOnHidden>
       <label className="stacked-label">{nameRequest?.kind.includes('project') ? '项目名称' : '页面名称'}<Input autoFocus aria-label="管理名称" maxLength={120} placeholder="输入名称" value={nameValue} onChange={event => setNameValue(event.target.value)} onPressEnter={() => { void submitName(); }}/></label>
     </Modal>
@@ -165,7 +173,7 @@ function ProjectSwitcher() {
   const disabled = busy || session.server !== 'ready';
   return <div className="project-switcher"><Select aria-label="当前项目" variant="borderless" showSearch optionFilterProp="label" disabled={disabled} value={session.currentProjectId || undefined} placeholder={session.projectName}
     options={projects.length ? projects.map(project => ({ value: project.id, label: project.name })) : session.currentProjectId ? [{ value: session.currentProjectId, label: session.projectName }] : []} onChange={selectProject}/>
-    <Dropdown trigger={['click']} menu={{ items: [{ key: 'sketch', label: '导入 Sketch', disabled: !session.can('sketch.import') }, { type: 'divider' }, { key: 'rename', label: '重命名项目', disabled: !session.can('project.update') }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || !session.can('project.delete') }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
+    <Dropdown trigger={['click']} menu={{ items: [{ key: 'image', label: '图片生成原型', disabled: !session.can('page.manage') || !session.can('prototype.edit') }, { key: 'sketch', label: '导入 Sketch', disabled: !session.can('sketch.import') }, { type: 'divider' }, { key: 'rename', label: '重命名项目', disabled: !session.can('project.update') }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || !session.can('project.delete') }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
     <button aria-label="新建项目" title="新建项目" disabled={disabled || !session.canCreateProject} onClick={() => name({ kind: 'new-project' })}><PlusOutlined/></button>
   </div>;
 }

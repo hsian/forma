@@ -6,6 +6,7 @@ import { tmpdir, homedir } from 'node:os';
 import { aiResultJsonSchema } from '../../shared/ai.js';
 
 export type Provider = 'codex' | 'claude';
+export type ImageInput = { mediaType: 'image/png' | 'image/jpeg'; data: string };
 type Launch = { command: string; args: string[] };
 export function resolveCli(provider: Provider): Launch | null {
   const configured = process.env[`FORMA_${provider.toUpperCase()}_CLI`];
@@ -59,15 +60,15 @@ export function webSocketOverrides(config: string) {
   return [...config.matchAll(/^\s*\[model_providers\.["']?([a-zA-Z0-9_-]+)["']?\]([^]*?)(?=^\s*\[|$(?![^]))/gm)]
     .filter(match => /^\s*name\s*=\s*["']/m.test(match[2])).flatMap(match => ['-c', `model_providers.${match[1]}.supports_websockets=false`]);
 }
-async function invoke(provider: Provider, prompt: string, signal: AbortSignal, onText: (text: string) => void) {
+async function invoke(provider: Provider, prompt: string, signal: AbortSignal, onText: (text: string) => void, image?: ImageInput, outputSchema: Record<string, unknown> = aiResultJsonSchema) {
   const launch = resolveCli(provider); if (!launch) throw new ModelError('missing');
   const directory = await mkdtemp(join(tmpdir(), 'forma-ai-'));
   try {
     const schemaPath = join(directory, 'schema.json'); const outputPath = join(directory, 'result.json');
-    await writeFile(schemaPath, JSON.stringify(aiResultJsonSchema), 'utf8');
+    await writeFile(schemaPath, JSON.stringify(outputSchema), 'utf8');
     const args = provider === 'codex' ? ['exec', '--json', '--color', 'never', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '-c', 'mcp_servers={}', '--output-schema', schemaPath, '--output-last-message', outputPath,
       ...['shell_tool', 'unified_exec', 'code_mode', 'apps', 'browser_use', 'computer_use'].flatMap(feature => ['--disable', feature]), '-'] :
-      ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--no-session-persistence', '--permission-mode', 'dontAsk', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--json-schema', JSON.stringify(aiResultJsonSchema)];
+      ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--no-session-persistence', '--permission-mode', 'dontAsk', '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--json-schema', JSON.stringify(outputSchema)];
     if (provider === 'codex') {
       const transport: string[] = [];
       if (process.env.FORMA_CODEX_SYSTEM_PROXY !== 'false') transport.push('--enable', 'respect_system_proxy');
@@ -79,6 +80,12 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
     }
     const model = process.env[`FORMA_${provider.toUpperCase()}_MODEL`];
     if (model) args.splice(provider === 'codex' ? args.length - 1 : args.length, 0, '--model', model);
+    if (image && provider === 'codex') {
+      const imagePath = join(directory, image.mediaType === 'image/png' ? 'reference.png' : 'reference.jpg');
+      await writeFile(imagePath, Buffer.from(image.data, 'base64'));
+      args.splice(args.length - 1, 0, '--image', imagePath, '--');
+    }
+    if (image && provider === 'claude') args.push('--input-format', 'stream-json');
     const result = await new Promise<string>((resolve, reject) => {
       if (signal.aborted) { reject(new ModelError('cancelled')); return; }
       const child = spawn(launch.command, [...launch.args, ...args], { cwd: directory, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: process.env });
@@ -103,7 +110,7 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
           if (parsed.final) { final = parsed.final; output = parsed.final; }
           const reply = replyText(output);
           if (reply.startsWith(published) && reply.length > published.length) { onText(reply.slice(published.length)); published = reply; }
-          if (parsed.final) { try { const value = JSON.parse(parsed.final); if (value.reply && Array.isArray(value.operations)) finish(); } catch { /* Wait for complete output. */ } }
+          if (parsed.final) { try { const value = JSON.parse(parsed.final); if (value && typeof value === 'object') finish(); } catch { /* Wait for complete output. */ } }
         } catch { /* Ignore CLI diagnostics on stdout. */ }
       }
       child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
@@ -120,20 +127,23 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
       child.on('error', () => finish(new ModelError('failed')));
       child.stdin.on('error', () => {});
       child.on('close', code => { if (settled) return; if (buffer.trim()) line(buffer); if (settled) return; if (quota(error)) finish(new ModelError('quota')); else if (code !== 0 || !final) finish(new ModelError('failed')); else finish(); });
-      child.stdin.end(prompt);
+      child.stdin.end(image && provider === 'claude' ? JSON.stringify({ type: 'user', message: { role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } },
+        { type: 'text', text: prompt },
+      ] } }) + '\n' : prompt);
     });
     const file = provider === 'codex' ? await readFile(outputPath, 'utf8').catch(() => '') : '';
     return file.trim() || result;
   } finally { await rm(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }).catch(() => {}); }
 }
-export async function generate(prompt: string, signal: AbortSignal, onStatus: (text: string) => void, onText: (text: string) => void) {
+export async function generate(prompt: string, signal: AbortSignal, onStatus: (text: string) => void, onText: (text: string) => void, image?: ImageInput, outputSchema: Record<string, unknown> = aiResultJsonSchema) {
   const requested = process.env.FORMA_AI_PROVIDER || 'auto';
   const first: Provider = requested === 'claude' ? 'claude' : 'codex';
-  try { onStatus(`正在由 ${first === 'codex' ? 'Codex' : 'Claude'} 处理`); return { raw: await invoke(first, prompt, signal, onText), provider: first }; }
+  try { onStatus(`正在由 ${first === 'codex' ? 'Codex' : 'Claude'} 处理`); return { raw: await invoke(first, prompt, signal, onText, image, outputSchema), provider: first }; }
   catch (error) {
     if (requested === 'auto' && first === 'codex' && error instanceof ModelError && error.kind === 'quota' && !signal.aborted) {
       onStatus('Codex 额度已用完，正在切换到 Claude');
-      return { raw: await invoke('claude', prompt, signal, onText), provider: 'claude' as const };
+      return { raw: await invoke('claude', prompt, signal, onText, image, outputSchema), provider: 'claude' as const };
     }
     throw error;
   }

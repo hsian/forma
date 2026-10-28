@@ -7,6 +7,9 @@ import { tableRows, tableColumns, rowActions, rowText, type RuntimeValue, type R
 import { ChoiceView } from './ChoiceView';
 import { AntdElement } from './AntdElement';
 import { componentConfig } from '../shared/antd-catalog';
+import { tableLayout } from '../shared/table-layout';
+import type { CSSProperties } from 'react';
+import './table-appearance.css';
 
 const members = [
   { key: '1', name: '林晓', email: 'lin.xiao@example.com', role: '管理员', status: '正常', date: '2026-10-20' },
@@ -31,7 +34,8 @@ function ElementBody({ element: e, preview = false, activate, value, onChange, v
     }
     case 'button': {
       const plain = config.type === 'text' || config.type === 'link';
-      return <Button type={config.type as 'default'} disabled={config.disabled === true} loading={config.loading === true} danger={config.danger === true} size={config.size as 'middle' | undefined} style={{ ...common, background: plain ? 'transparent' : config.danger ? '#ff4d4f' : e.fill, color: plain ? config.danger ? '#ff4d4f' : e.fill : e.color, borderColor: plain ? 'transparent' : e.strokeWidth ? e.stroke : 'transparent', borderWidth: plain ? 0 : e.strokeWidth, borderStyle: config.type === 'dashed' ? 'dashed' : undefined }} onClick={event => { event.stopPropagation(); activate?.(e); }}>{e.text}</Button>;
+      const textColor = plain && e.color.toLowerCase() === '#ffffff' ? e.fill : e.color;
+      return <Button type={config.type as 'default'} disabled={config.disabled === true} loading={config.loading === true} danger={config.danger === true} size={config.size as 'middle' | undefined} style={{ ...common, background: plain ? 'transparent' : config.danger ? '#ff4d4f' : e.fill, color: plain && config.danger ? '#ff4d4f' : textColor, borderColor: plain ? 'transparent' : e.strokeWidth ? e.stroke : 'transparent', borderWidth: plain ? 0 : e.strokeWidth, borderStyle: config.type === 'dashed' ? 'dashed' : undefined }} onClick={event => { event.stopPropagation(); activate?.(e); }}>{e.text}</Button>;
     }
     case 'input': return <Input aria-label={e.name} placeholder={e.text} disabled={config.disabled === true} allowClear={config.allowClear === true} size={config.size as 'middle' | undefined} value={typeof value === 'string' ? value : undefined} onChange={event => onChange?.(event.target.value)} style={{ ...common, background: e.fill }} />;
     case 'tabs': case 'tree': case 'checkbox': return <div style={{ ...common, overflow: 'auto', background: e.fill }}><ChoiceView element={e} value={value} onChange={onChange}/></div>;
@@ -48,9 +52,18 @@ function ElementBody({ element: e, preview = false, activate, value, onChange, v
     case 'table': if (e.table) {
       const rows = tableRows(e, values, applied);
       const actions = rowActions(e.table);
+      const layout = tableLayout(e);
+      const appearance = layout.appearance;
+      const style = layout.custom ? {
+        '--table-header-height': `${appearance.headerHeight}px`, '--table-row-height': `${appearance.rowHeight}px`,
+        '--table-font-size': `${e.fontSize}px`, '--table-color': appearance.bodyColor || e.color,
+        '--table-body-background': appearance.bodyBackground || e.fill,
+        '--table-header-background': appearance.headerBackground || '#f7f8fc', '--table-header-color': appearance.headerColor || e.color,
+        '--table-border-color': appearance.borderColor || '#eef0f6',
+      } as CSSProperties : {};
       const rowClick = (row: Record<string, string>) => notify?.(rowText(e.table?.rowMessage || '已选择此行', row));
-      return <div className="prototype-table" style={{ width: '100%', height: '100%', overflow: 'auto', background: e.fill, borderRadius: e.radius }}><Table key={JSON.stringify([values, applied, e.table.pageSize])} size="small" rowKey="__rowKey" dataSource={rows.map(row => ({ ...row, __rowKey: String(e.table!.rows.indexOf(row)) }))} scroll={{ x: 'max-content' }} pagination={{ pageSize: e.table.pageSize, size: 'small', showSizeChanger: false, showTotal: total => `共 ${total} 条` }} onRow={preview ? record => ({ onClick: () => rowClick(record), style: { cursor: 'pointer' } }) : undefined} columns={[
-        ...tableColumns(e, values).map(column => ({ title: column.title, dataIndex: column.key, width: column.width || 140 })),
+      return <div className={`prototype-table${layout.custom ? ' prototype-table-custom' : ''}`} style={{ ...style, width: '100%', height: '100%', overflow: 'auto', background: e.fill, borderRadius: e.radius }}><Table key={JSON.stringify([values, applied, e.table.pageSize])} size="small" bordered={appearance.bordered} tableLayout={layout.custom ? 'fixed' : undefined} rowKey="__rowKey" dataSource={rows.map(row => ({ ...row, __rowKey: String(e.table!.rows.indexOf(row)) }))} scroll={{ x: layout.custom ? Math.max(layout.columnsWidth + (actions.length ? Math.max(80, actions.length * 64) : 0), e.width) : 'max-content' }} pagination={layout.pagination ? { pageSize: e.table.pageSize, size: 'small', showSizeChanger: false, showTotal: total => `共 ${total} 条` } : false} onRow={preview ? record => ({ onClick: () => rowClick(record), style: { cursor: 'pointer' } }) : undefined} columns={[
+        ...tableColumns(e, values).map(column => ({ title: column.title, dataIndex: column.key, width: column.width || 140, align: column.align || appearance.align, fixed: column.fixed, ellipsis: layout.custom })),
         ...(actions.length ? [{ title: '操作', key: '__action', width: Math.max(80, actions.length * 64), fixed: 'right' as const, render: (_: unknown, record: Record<string, string>) => <>{actions.map(action => <Button key={action.id} type="link" size="small" onClick={event => { event.stopPropagation(); if (!preview) return; onRowAction?.(e, action, Number(record.__rowKey)); }}>{action.label}</Button>)}</> }] : []),
       ]}/></div>;
     }

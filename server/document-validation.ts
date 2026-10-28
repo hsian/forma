@@ -36,8 +36,11 @@ export const elementSchema = z.object({
   visibleWhen: condition.optional(),
   choices: z.object({ options: z.array(z.object({ id, label: z.string().max(2000), parentId: id.optional() })).max(10000), defaultValues: z.array(id), requiredAny: z.array(id).optional() }).optional(),
   table: z.object({
-    columns: z.array(z.object({ key: id, title: z.string().max(2000), width: dimension.optional(), visibleWhen: condition.optional() })).max(200),
+    columns: z.array(z.object({ key: id, title: z.string().max(2000), width: dimension.optional(), align: z.enum(['left', 'center', 'right']).optional(), fixed: z.enum(['left', 'right']).optional(), visibleWhen: condition.optional() })).max(200),
     rows: z.array(z.record(z.string(), z.string())).max(10000), pageSize: z.number().int().min(1).max(100),
+    pagination: z.boolean().optional(),
+    scrollWidth: dimension.optional(),
+    appearance: z.object({ rowHeight: z.number().min(24).max(200).optional(), headerHeight: z.number().min(24).max(200).optional(), headerBackground: color.optional(), headerColor: color.optional(), bodyBackground: color.optional(), bodyColor: color.optional(), borderColor: color.optional(), bordered: z.boolean().optional(), align: z.enum(['left', 'center', 'right']).optional() }).strict().optional(),
     filters: z.array(z.object({ sourceId: id, fields: z.array(id), mode: z.enum(['contains', 'equals']), live: z.boolean(), when: condition.optional() })).optional(),
     columnControls: z.array(z.object({ sourceId: id, when: condition.optional() })).optional(),
     rowActionText: z.string().optional(), rowMessage: z.string().optional(),

@@ -8,8 +8,11 @@ export interface TableRowAction { id: string; label: string; action: 'modal' | '
 export interface Condition { sourceId: string; value: string }
 export interface ChoiceConfig { options: (SelectOption & { parentId?: string })[]; defaultValues: string[]; requiredAny?: string[] }
 export interface TableConfig {
-  columns: { key: string; title: string; width?: number; visibleWhen?: Condition }[];
+  columns: { key: string; title: string; width?: number; align?: 'left' | 'center' | 'right'; fixed?: 'left' | 'right'; visibleWhen?: Condition }[];
   rows: Record<string, string>[]; pageSize: number;
+  pagination?: boolean;
+  scrollWidth?: number;
+  appearance?: { rowHeight?: number; headerHeight?: number; headerBackground?: string; headerColor?: string; bodyBackground?: string; bodyColor?: string; borderColor?: string; bordered?: boolean; align?: 'left' | 'center' | 'right' };
   filters?: { sourceId: string; fields: string[]; mode: 'contains' | 'equals'; live: boolean; when?: Condition }[];
   columnControls?: { sourceId: string; when?: Condition }[];
   rowActionText?: string; rowMessage?: string;

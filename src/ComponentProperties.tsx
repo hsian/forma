@@ -3,6 +3,7 @@ import { Button, Checkbox, Input, InputNumber, Modal, Select } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { getSelectConfig, type Condition, type PrototypeElement, type TableConfig, type PrototypeDialog, type TableRowAction } from '../shared/model';
 import { rowActions, isFormControl } from '../shared/runtime';
+import { tableLayout } from '../shared/table-layout';
 
 type Props = { element: PrototypeElement; elements: PrototypeElement[]; patch: (id: string, patch: Partial<PrototypeElement>) => void; dialogs?: PrototypeDialog[]; editDialog?: (id: string) => void; createRowDialog?: (actionId: string) => void };
 export function RowBindingProperties({ element: e, elements, patch }: Pick<Props, 'element' | 'elements' | 'patch'>) {
@@ -32,9 +33,22 @@ export function ComponentProperties({ element: e, elements, patch, dialogs = [],
   if (!table) return <div className="component-properties"><p className="property-note">此表格使用旧版成员示例。</p><Button size="small" onClick={() => update({ columns: [{ key: 'name', title: '名称', width: 200 }], rows: [{ name: '示例数据' }], pageSize: 5 })}>自定义表格</Button></div>;
   const dataFields = [...table.columns, ...[...new Set(table.rows.flatMap(row => Object.keys(row)))].filter(key => !table.columns.some(c => c.key === key)).map(key => ({ key, title: key }))];
   const actions = rowActions(table);
+  const layout = tableLayout(e);
+  const changeAppearance = (change: NonNullable<TableConfig['appearance']>) => update({ ...table, pagination: layout.pagination, appearance: { ...layout.appearance, ...change } });
   const changeAction = (id: string, change: Partial<TableRowAction>) => update({ ...table, rowActions: actions.map(action => action.id === id ? { ...action, ...change } : action) });
   return <div className="component-properties"><strong>表格列</strong>{table.columns.map((column, index) => <div className="table-column-property" key={column.key}><div className="property-inline"><Input aria-label={`第 ${index + 1} 列标题`} value={column.title} onChange={event => update({ ...table, columns: table.columns.map(c => c.key === column.key ? { ...c, title: event.target.value } : c) })}/><Button size="small" aria-label={`删除第 ${index + 1} 列`} icon={<DeleteOutlined/>} onClick={() => update({ ...table, columns: table.columns.filter(c => c.key !== column.key) })}/></div><label className="stacked-label">显示条件<ConditionProperties value={column.visibleWhen} elements={elements} onChange={visibleWhen => update({ ...table, columns: table.columns.map(c => c.key === column.key ? { ...c, visibleWhen } : c) })}/></label></div>)}
     <Button block size="small" icon={<PlusOutlined/>} onClick={() => update({ ...table, columns: [...table.columns, { key: crypto.randomUUID(), title: '新列', width: 160 }] })}>添加列</Button>
+    <strong>表格外观</strong>
+    <label className="stacked-label">表头高度<InputNumber aria-label="表头高度" min={24} max={200} value={layout.appearance.headerHeight} onChange={headerHeight => headerHeight && changeAppearance({ headerHeight })}/></label>
+    <label className="stacked-label">数据行高<InputNumber aria-label="数据行高" min={24} max={200} value={layout.appearance.rowHeight} onChange={rowHeight => rowHeight && changeAppearance({ rowHeight })}/></label>
+    <label className="stacked-label">表格对齐<Select aria-label="表格对齐" value={layout.appearance.align || 'left'} options={[{ value: 'left', label: '左对齐' }, { value: 'center', label: '居中' }, { value: 'right', label: '右对齐' }]} onChange={align => changeAppearance({ align })}/></label>
+    <label className="stacked-label">表头背景<Input aria-label="表头背景" type="color" value={layout.appearance.headerBackground || '#f7f8fc'} onChange={event => changeAppearance({ headerBackground: event.target.value })}/></label>
+    <label className="stacked-label">表头文字颜色<Input aria-label="表头文字颜色" type="color" value={layout.appearance.headerColor || e.color} onChange={event => changeAppearance({ headerColor: event.target.value })}/></label>
+    <label className="stacked-label">单元格背景<Input aria-label="单元格背景" type="color" value={layout.appearance.bodyBackground || e.fill} onChange={event => changeAppearance({ bodyBackground: event.target.value })}/></label>
+    <label className="stacked-label">表格边框颜色<Input aria-label="表格边框颜色" type="color" value={layout.appearance.borderColor || '#eef0f6'} onChange={event => changeAppearance({ borderColor: event.target.value })}/></label>
+    <Checkbox checked={!!layout.appearance.bordered} onChange={event => changeAppearance({ bordered: event.target.checked })}>显示单元格边框</Checkbox>
+    <Checkbox checked={layout.pagination} onChange={event => update({ ...table, pagination: event.target.checked })}>显示分页</Checkbox>
+    <label className="stacked-label">滚动内容宽度<InputNumber aria-label="滚动内容宽度" min={1} max={20000} value={table.scrollWidth} placeholder="按列宽自动计算" onChange={scrollWidth => update({ ...table, scrollWidth: scrollWidth || undefined })}/></label>
     <label className="stacked-label">每页条数<InputNumber aria-label="每页条数" min={1} max={100} value={table.pageSize} onChange={pageSize => pageSize && update({ ...table, pageSize })}/></label>
     <Button block onClick={() => setDataOpen(true)}>编辑模拟数据（{table.rows.length} 条）</Button>
     <strong>行操作按钮</strong>{actions.map((action, index) => <div className="table-column-property" key={action.id}>

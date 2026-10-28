@@ -16,6 +16,7 @@ export async function generateValidated(
   onStatus: (text: string) => void, onText: (text: string) => void,
   onRepair: (details: ReturnType<typeof validationDetails>) => void,
   invoke: typeof generate = generate,
+  validate?: (document: PrototypeDocument) => void,
 ) {
   let nextPrompt = prompt;
   let hadChanges = false;
@@ -29,6 +30,7 @@ export async function generateValidated(
       if (attempt && hadChanges && !value.operations.length) throw Error('修正结果遗漏了原请求的修改操作');
       hadChanges ||= value.operations.length > 0;
       const result = applyAiResult(source, value);
+      validate?.(result.document);
       return { generated, value, result };
     } catch (error) {
       const details = validationDetails(error);
