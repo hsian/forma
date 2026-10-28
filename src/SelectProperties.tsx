@@ -1,3 +1,4 @@
+import { randomId } from '../shared/uuid';
 import { Button, Input, Select, Switch } from 'antd';
 import { ArrowUpOutlined, ArrowDownOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { getSelectConfig, normalizeSelectConfig, type PrototypeElement, type SelectConfig } from '../shared/model';
@@ -24,7 +25,7 @@ export function SelectProperties({ element, patch }: { element: PrototypeElement
       </div>
     </div>)}</div>
     {!config.options.length && <p className="property-note">还没有选项，添加后即可在预览中选择。</p>}
-    <Button block size="small" icon={<PlusOutlined/>} aria-label="添加选项" onClick={() => update({ options: [...config.options, { id: crypto.randomUUID(), label: `选项${config.options.length + 1}` }] })}>添加选项</Button>
+    <Button block size="small" icon={<PlusOutlined/>} aria-label="添加选项" onClick={() => update({ options: [...config.options, { id: randomId(), label: `选项${config.options.length + 1}` }] })}>添加选项</Button>
     <label className="stacked-label">默认选中项<Select
       key={config.multiple ? 'multiple' : 'single'} aria-label="默认选中项" placeholder="不预选" virtual={false} allowClear
       mode={config.multiple ? 'multiple' : undefined}

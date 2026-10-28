@@ -1,3 +1,4 @@
+import { randomId } from '../shared/uuid';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Input, Modal, Select, Spin } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
@@ -47,7 +48,7 @@ export function ImagePrototype({ projectId, busy, onCancel, onImport }: {
   async function generate() {
     if (!image || pending.current) return;
     const controller = new AbortController(); pending.current = controller;
-    jobId.current = crypto.randomUUID();
+    jobId.current = randomId();
     setGenerating(true); setResult(undefined); setError(''); setStatus('正在上传图片…');
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/image-prototype/generate`, {

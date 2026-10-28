@@ -11,11 +11,24 @@ const page = await authenticatedPage(browser, { viewport: { width: 1600, height:
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const button = name => page.getByRole('button', { name, exact: true });
 const tab = name => page.getByRole('tab', { name, exact: true });
+const headingStyle = () => page.locator('.canvas-ruler:visible').evaluate(element => {
+  const style = getComputedStyle(element);
+  return Object.fromEntries(['height', 'padding', 'backgroundColor', 'color', 'borderBottom', 'fontSize'].map(key => [key, style[key]]));
+});
+const footerStyle = () => page.locator('.canvas-bottom:visible').evaluate(footer => {
+  const properties = ['height', 'padding', 'backgroundColor', 'color', 'borderTop', 'fontSize', 'gap'];
+  return [footer, footer.firstElementChild, footer.querySelector('.zoom-controls'), footer.querySelector('.ant-select'), footer.querySelector('.tool')].map(element => {
+    const style = getComputedStyle(element);
+    return Object.fromEntries(properties.map(key => [key, style[key]]));
+  });
+});
 async function menu(name) { await button('页面操作 用户管理').click(); await page.getByRole('menuitem', { name, exact: true }).click(); }
 try {
   await page.goto(`${process.env.TEST_URL}/design`);
   await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.locator('.prototype-page-tree').waitFor();
+  const prototypeFooterStyle = await footerStyle();
+  const prototypeHeadingStyle = await headingStyle();
   assert.equal(await page.getByRole('tablist', { name: '页面交付物' }).count(), 0);
   const before = (await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json()).document;
   await menu('需要 UI 设计');
@@ -39,9 +52,15 @@ try {
   await button('关联到页面').click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await page.locator('.ui-design-board').getByText('导入的设计文字', { exact: true }).waitFor();
+  assert.deepEqual(await footerStyle(), prototypeFooterStyle, '设计稿与原型底栏使用相同样式');
+  assert.deepEqual(await headingStyle(), prototypeHeadingStyle, '设计稿标题栏与原型标题栏使用相同样式');
+  assert.equal(await page.locator('.ui-design-heading .ant-btn:not(.ant-btn-sm)').count(), 0);
+  assert.equal(await page.locator('.ui-design-heading .ant-select-sm').count(), 1);
+  await page.screenshot({ path: 'test-results/page-design-compact-heading.png', animations: 'disabled' });
+  assert.equal(await page.getByRole('button', { name: 'AI 问设计', exact: true }).count(), 0);
   const scene = page.locator('.ui-design-scene');
   const zoom = async () => Number(await scene.getAttribute('data-zoom'));
-  await button('设计稿原始大小').click();
+  await page.getByRole('region', { name: '设计稿画布' }).press('1');
   await page.waitForFunction(() => Number(document.querySelector('.ui-design-scene')?.dataset.zoom) === 1);
   await button('放大设计稿').click();
   assert.ok(await zoom() > 1);

@@ -1,3 +1,4 @@
+import { randomId } from '../shared/uuid';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Tooltip } from 'antd';
 import { MinusOutlined, CommentOutlined, SendOutlined, StopOutlined, RobotOutlined, UndoOutlined } from '@ant-design/icons';
@@ -60,7 +61,7 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
       if (!await session.flush()) throw Error('当前页面尚未保存，请先处理保存失败或冲突。');
       if (abort.signal.aborted || !mounted.current) return;
       const source = structuredClone(useEditor.getState().doc); const fingerprint = canonicalDocument(source);
-      setMessages(old => [...old, { id: crypto.randomUUID(), role: 'user', content: prompt, status: 'done', provider: '', createdAt: Date.now() }]);
+      setMessages(old => [...old, { id: randomId(), role: 'user', content: prompt, status: 'done', provider: '', createdAt: Date.now() }]);
       const response = await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/turn`, { method: 'POST', signal: abort.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, selectedIds, dialogId, baseDocument: source }) });
       if (!response.ok) { const value = await response.json(); throw Error(value.message || '发送失败'); }
       const reader = response.body?.getReader(); if (!reader) throw Error('未收到有效响应');

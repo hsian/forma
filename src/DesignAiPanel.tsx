@@ -1,3 +1,4 @@
+import { randomId } from '../shared/uuid';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Tooltip } from 'antd';
 import { CloseOutlined, CommentOutlined, RobotOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
@@ -37,7 +38,7 @@ export function DesignAiPanel({ pageId, designId, name, doc, selectedIds, visibl
     if(sending.current||loading||!draft.trim())return;
     const prompt=draft.trim(), selection=[...selectedIds], abort=new AbortController();
     controller.current=abort;sending.current=true;setBusy(true);setError('');setLive('正在读取图层属性…');setDraft('');
-    setMessages(old=>[...old,{id:crypto.randomUUID(),role:'user',content:prompt,status:'done',provider:'',createdAt:Date.now()}]);
+    setMessages(old=>[...old,{id:randomId(),role:'user',content:prompt,status:'done',provider:'',createdAt:Date.now()}]);
     let received=false;
     try{
       const response=await fetch(`${endpoint}/turn`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,selectedIds:selection}),signal:abort.signal});

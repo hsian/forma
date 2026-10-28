@@ -1,6 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from 'react';
-import { Button, Select, Tooltip } from 'antd';
-import { AimOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons';
+import { CanvasFooter } from './CanvasFooter';
 import type { PrototypeDocument } from '../shared/model';
 import { initialValues } from '../shared/runtime';
 import { ElementView } from './ElementView';
@@ -97,12 +96,8 @@ export function DesignCanvas({ doc, name, selectedIds = [], onSelect }: { doc: P
         {doc.elements.filter(element=>selectedIds.includes(element.id)).map(element=><div key={element.id} className="design-layer-selection" style={{left:element.x,top:element.y,width:element.width,height:element.height,outlineWidth:1.5/view.zoom,transform:`${element.importTransform?`matrix(${element.importTransform.join(',')},0,0) `:''}rotate(${element.rotation}deg)`}}/>)}
       </div>
     </div>
-    <div className="ui-design-navigation"><span>点击选图层 · Shift 多选 · 滚轮缩放 · 拖动平移{selectedIds.length ? ` · 已选 ${selectedIds.length} 项` : ''}</span><div>
-      <Tooltip title="缩小"><Button type="text" aria-label="缩小设计稿" icon={<MinusOutlined/>} disabled={view.zoom <= .01} onClick={() => zoomTo(currentView.current.zoom / 1.25)}/></Tooltip>
-      <Select aria-label="设计稿缩放" value={view.zoom} onChange={value => zoomTo(value)} options={[...new Set([.1,.25,.5,.75,1,1.5,2,3,4,6,8,view.zoom])].sort((a,b)=>a-b).map(value=>({value,label:`${Math.round(value*100)}%`}))}/>
-      <Tooltip title="放大"><Button type="text" aria-label="放大设计稿" icon={<PlusOutlined/>} disabled={view.zoom >= 8} onClick={() => zoomTo(currentView.current.zoom * 1.25)}/></Tooltip>
-      <Button type="text" aria-label="设计稿原始大小" onClick={() => zoomTo(1)}>100%</Button>
-      <Button type="text" aria-label="设计稿适应窗口" icon={<AimOutlined/>} onClick={fit}>适应窗口</Button>
-    </div></div>
+    <CanvasFooter zoom={view.zoom} minZoom={.01} maxZoom={8} zoomOptions={[1, 10, 25, 50, 75, 100, 150, 200, 300, 400, 600, 800]}
+      labels={{zoom:'设计稿缩放',out:'缩小设计稿',in:'放大设计稿',fit:'设计稿适应窗口'}}
+      onZoomChange={zoomTo} onZoomOut={() => zoomTo(currentView.current.zoom / 1.25)} onZoomIn={() => zoomTo(currentView.current.zoom * 1.25)} onFit={fit}/>
   </>;
 }

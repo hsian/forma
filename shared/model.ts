@@ -1,3 +1,4 @@
+import { randomId } from './uuid.js';
 import type { DrawingStyle, SketchImportReport } from './drawing';
 import { antdCatalog, antdKinds, componentDefaults, getComponentDefinition, type AntdKind, type ComponentConfig } from './antd-catalog';
 export const basicKinds = ['rectangle', 'ellipse', 'text', 'line', 'vector'] as const;
@@ -47,7 +48,7 @@ export interface PrototypeAnnotation { id: string; number: number; x: number; y:
 export interface PrototypeDocument { importInfo?: { report: SketchImportReport; sourceHash?:string; sourcePageId?:string; sourceBoardId?:string; importedAt?:number; importedBy?:string; acknowledgedDifferences?:boolean }; width: number; height: number; background: string; elements: PrototypeElement[]; dialogs?: PrototypeDialog[]; annotations?: PrototypeAnnotation[] }
 export const kindNames = { rectangle: '矩形', ellipse: '椭圆', text: '文本', line: '直线', vector: '矢量图形', ...Object.fromEntries(antdKinds.map(kind => [kind, antdCatalog[kind].label])) } as Record<ElementKind, string>;
 export function makeSelectConfig(labels = ['选项一', '选项二']): SelectConfig {
-  return { options: labels.map(label => ({ id: crypto.randomUUID(), label })), defaultValues: [], multiple: false, allowClear: true, disabled: false };
+  return { options: labels.map(label => ({ id: randomId(), label })), defaultValues: [], multiple: false, allowClear: true, disabled: false };
 }
 export function normalizeSelectConfig(config: SelectConfig): SelectConfig {
   const valid = new Set(config.options.map(option => option.id));
@@ -61,11 +62,11 @@ export function makeElement(kind: ElementKind, x = 80, y = 80): PrototypeElement
   const basics: Record<typeof basicKinds[number], [number, number]> = { rectangle: [200, 140], ellipse: [140, 140], text: [220, 40], line: [240, 8], vector: [100, 100] };
   const dimensions = getComponentDefinition(kind)?.size || basics[kind as typeof basicKinds[number]];
   const component = componentDefaults(kind);
-  return { id: crypto.randomUUID(), kind, name: kindNames[kind], x, y, width: dimensions[0], height: dimensions[1], rotation: 0, text: kind === 'text' ? '双击编辑文字' : ['input', 'textArea', 'inputSearch', 'inputPassword', 'autoComplete', 'mentions'].includes(kind) ? '请输入内容' : kind === 'select' ? '请选择' : kindNames[kind], fill: kind === 'button' ? '#635bff' : kind === 'rectangle' || kind === 'ellipse' ? '#eeedff' : '#ffffff', color: kind === 'button' ? '#ffffff' : '#303447', stroke: '#dcdfe8', strokeWidth: kind === 'text' ? 0 : 1, radius: 6, fontSize: kind === 'text' ? 20 : 14, opacity: 1, hidden: false, locked: false, action: 'none', actionText: '操作成功', ...(Object.keys(component).length ? { component } : {}), ...(kind === 'vector' ? { vector: { path: 'M0 100 L50 0 L100 100 Z', viewWidth: 100, viewHeight: 100, fillEnabled: true, fillOpacity: 1, strokeOpacity: 1, fillRule: 'nonzero' as const } } : {}), ...(kind === 'select' ? { select: makeSelectConfig() } : {}), ...(['tabs', 'tree', 'checkbox'].includes(kind) ? { choices: { options: [{ id: 'one', label: '选项一' }, { id: 'two', label: '选项二' }], defaultValues: kind === 'checkbox' ? [] : ['one'] } } : {}) };
+  return { id: randomId(), kind, name: kindNames[kind], x, y, width: dimensions[0], height: dimensions[1], rotation: 0, text: kind === 'text' ? '双击编辑文字' : ['input', 'textArea', 'inputSearch', 'inputPassword', 'autoComplete', 'mentions'].includes(kind) ? '请输入内容' : kind === 'select' ? '请选择' : kindNames[kind], fill: kind === 'button' ? '#635bff' : kind === 'rectangle' || kind === 'ellipse' ? '#eeedff' : '#ffffff', color: kind === 'button' ? '#ffffff' : '#303447', stroke: '#dcdfe8', strokeWidth: kind === 'text' ? 0 : 1, radius: 6, fontSize: kind === 'text' ? 20 : 14, opacity: 1, hidden: false, locked: false, action: 'none', actionText: '操作成功', ...(Object.keys(component).length ? { component } : {}), ...(kind === 'vector' ? { vector: { path: 'M0 100 L50 0 L100 100 Z', viewWidth: 100, viewHeight: 100, fillEnabled: true, fillOpacity: 1, strokeOpacity: 1, fillRule: 'nonzero' as const } } : {}), ...(kind === 'select' ? { select: makeSelectConfig() } : {}), ...(['tabs', 'tree', 'checkbox'].includes(kind) ? { choices: { options: [{ id: 'one', label: '选项一' }, { id: 'two', label: '选项二' }], defaultValues: kind === 'checkbox' ? [] : ['one'] } } : {}) };
 }
 const el = (kind: ElementKind, props: Partial<PrototypeElement>) => ({ ...makeElement(kind), ...props });
 export function makeDialog(title = '新建弹窗', sample = false): { dialog: PrototypeDialog; elements: PrototypeElement[] } {
-  const dialog: PrototypeDialog = { id: crypto.randomUUID(), title, width: 472, height: 400, background: '#ffffff' };
+  const dialog: PrototypeDialog = { id: randomId(), title, width: 472, height: 400, background: '#ffffff' };
   const elements = sample ? [
     el('text', { name: '姓名标签', text: '成员姓名 *', x: 0, y: 0, width: 450, height: 24, fontSize: 14 }),
     el('input', { name: '成员姓名', text: '请输入成员姓名', x: 0, y: 30, width: 472, required: true }),

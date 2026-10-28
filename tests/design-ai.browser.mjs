@@ -21,10 +21,10 @@ try{
   const designId=(await imported.json()).board.id;
   const source=(await(await page.request.get(`${base}/api/pages/default-page/design/${designId}`)).json()).document;
   await button('刷新页面列表').click();await button('查看 UI 设计稿 用户管理').click();
-  await page.locator('.ui-design-board').waitFor();await button('AI 问设计').click();
+  await page.locator('.ui-design-board').waitFor();await page.keyboard.press('Control+Backquote');
   const panel=page.getByRole('region',{name:'设计稿 AI 助手'});
   await page.locator('#design-ai-assistant-panel').waitFor();
-  await button('设计稿原始大小').click();
+  await page.getByRole('region', { name: '设计稿画布' }).press('1');
   const scene=await page.locator('.ui-design-scene').boundingBox();
   await page.mouse.click(scene.x+50,scene.y+40);
   await page.keyboard.down('Shift');await page.mouse.click(scene.x+170,scene.y+40);await page.keyboard.up('Shift');
@@ -41,7 +41,7 @@ try{
   await page.keyboard.press('Control+Backquote');assert.equal(await page.locator('#design-ai-assistant-panel').isVisible(),false);
   await page.keyboard.press('Control+Backquote');assert.equal(await page.locator('#design-ai-assistant-panel').isVisible(),true);
   await page.reload();await page.locator('.studio[data-server-state="ready"]').waitFor();
-  await button('查看 UI 设计稿 用户管理').click();await page.locator('.ui-design-board').waitFor();await button('AI 问设计').click();await button('展开设计稿 AI 对话').click();
+  await button('查看 UI 设计稿 用户管理').click();await page.locator('.ui-design-board').waitFor();await page.keyboard.press('Control+Backquote');await button('展开设计稿 AI 对话').click();
   await page.getByRole('log',{name:'设计稿 AI 对话记录'}).getByText(/水平间距 24px；填充 #ff0000/).waitFor();
   assert.deepEqual(errors,[]);
 }catch(error){await page.screenshot({path:'test-results/design-ai-failure.png',animations:'disabled'});console.log('Design AI browser diagnostics',JSON.stringify({errors,viewers:await page.locator('.ui-design-viewer').count(),buttons:await page.locator('[aria-label="设计稿原始大小"]').evaluateAll(elements=>elements.map(element=>element.outerHTML))}));throw error;}finally{await browser.close();}

@@ -1,5 +1,6 @@
+import { randomId } from '../shared/uuid';
 // One identifier per loaded browser tab; it is not shared through localStorage.
-export const editorClientId = crypto.randomUUID();
+export const editorClientId = randomId();
 export function installApiClient() {
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {

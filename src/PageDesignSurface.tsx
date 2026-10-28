@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Empty, Select, Spin } from 'antd';
-import { PictureOutlined, UploadOutlined, RobotOutlined } from '@ant-design/icons';
+import { PictureOutlined, UploadOutlined } from '@ant-design/icons';
 import { useManager } from './ProjectManager';
 import { DesignCanvas } from './DesignCanvas';
 import { DesignAiPanel } from './DesignAiPanel';
@@ -71,11 +71,10 @@ function DesignViewer({ pageId, pageName, canUpload, busy, onUpload }: { pageId:
   }, [pageId, selectedId, attempt]);
   const selected = boards.find(board => board.id === selectedId);
   return <div className="ui-design-viewer">
-    <div className="ui-design-heading"><strong className="ui-design-page-title" title={pageName}>{pageName}</strong><span className="ui-design-upload-time">{selected ? `上传于 ${new Date(selected.createdAt).toLocaleString('zh-CN')}` : 'UI 设计稿'}</span>
-      {!!boards.length && <Select className="ui-design-board-select" aria-label="查看设计画板" value={selectedId || undefined} options={boards.map(board => ({ value: board.id, label: board.name }))} onChange={setSelectedId}/>}
-      {doc?.importInfo && <Button type="text" onClick={() => setReportOpen(value => !value)}>{reportOpen ? '收起导入报告' : '查看导入报告'}</Button>}
-      {doc && <Button type={aiVisible ? 'primary' : 'text'} aria-label="AI 问设计" aria-pressed={aiVisible} icon={<RobotOutlined/>} onClick={() => setAiVisible(value => !value)}>AI 问设计</Button>}
-      {canUpload && <Button aria-label={boards.length ? '上传更多设计稿' : '上传 Sketch'} icon={<UploadOutlined/>} disabled={busy} onClick={onUpload}>{boards.length ? '上传更多设计稿' : '上传 Sketch'}</Button>}
+    <div className="canvas-ruler ui-design-heading"><strong className="ui-design-page-title" title={pageName}>{pageName}</strong><span className="ui-design-upload-time">{selected ? `上传于 ${new Date(selected.createdAt).toLocaleString('zh-CN')}` : 'UI 设计稿'}</span>
+      {!!boards.length && <Select size="small" variant="borderless" className="ui-design-board-select" aria-label="查看设计画板" value={selectedId || undefined} options={boards.map(board => ({ value: board.id, label: board.name }))} onChange={setSelectedId}/>}
+      {doc?.importInfo && <Button type="text" size="small" onClick={() => setReportOpen(value => !value)}>{reportOpen ? '收起导入报告' : '查看导入报告'}</Button>}
+      {canUpload && <Button type="text" size="small" aria-label={boards.length ? '上传更多设计稿' : '上传 Sketch'} icon={<UploadOutlined/>} disabled={busy} onClick={onUpload}>{boards.length ? '上传更多设计稿' : '上传 Sketch'}</Button>}
     </div>
     {error && <Alert type="error" showIcon message={error} action={<Button size="small" onClick={() => setAttempt(value => value + 1)}>重试</Button>}/>}
     {reportOpen && doc?.importInfo && <div className="ui-design-report"><ImportReport report={doc.importInfo.report}/></div>}
