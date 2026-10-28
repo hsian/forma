@@ -45,7 +45,7 @@ try {
   await page.waitForFunction(async () => Math.abs((await (await fetch('/api/pages/default-page/document')).json()).document.annotations[0].x - .3) < .01);
   await pin(2).click(); await button('删除当前标注').click(); await button('删除标注').click();
   await pin(2).waitFor({ state: 'hidden' }); await button('撤销 Ctrl+Z').click(); await pin(2).waitFor();
-  await button('元素').click(); await page.locator('.dialog-library>button').filter({ hasText: '新增成员' }).click();
+  await button('图层').click(); await page.locator('.dialog-library .dialog-edit').filter({ hasText: '新增成员' }).click();
   await button('打开标注面板').click(); await button('添加标注').click(); await place(.3, .2, true);
   await page.getByRole('textbox', { name: '标注标题', exact: true }).fill('必填字段');
   await page.getByRole('textbox', { name: '标注说明', exact: true }).fill('姓名和邮箱均需要填写。');

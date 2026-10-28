@@ -112,12 +112,38 @@ try {
   await leavePreview();
 
   // Undoing creation removes both the container and children, and exits its edit context.
-  const count = await page.locator('.dialog-library>button').count();
+  await button('图层').click();
+  const count = await page.locator('.dialog-library .dialog-edit').count();
   await button('新建弹窗').click();
-  assert.equal(await page.locator('.dialog-library>button').count(), count + 1);
+  assert.equal(await page.locator('.dialog-library .dialog-edit').count(), count + 1);
   await button('撤销 Ctrl+Z').click();
-  assert.equal(await page.locator('.dialog-library>button').count(), count);
+  assert.equal(await page.locator('.dialog-library .dialog-edit').count(), count);
   await page.locator('.dialog-edit-banner').waitFor({ state: 'hidden' });
+  // Dialogs belong to layers; deleting the active one is undoable and persists.
+  await button('元素').click();
+  assert.equal(await page.locator('.dialog-library').count(), 0);
+  await button('图层').click();
+  await button('编辑弹窗 新增团队成员').click();
+  await button('删除弹窗 新增团队成员').click();
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByText('正在编辑弹窗 · 新增团队成员', { exact: true }).waitFor();
+  await button('删除弹窗 新增团队成员').click();
+  await page.getByRole('dialog').getByRole('button', { name: '删除弹窗', exact: true }).click();
+  await page.locator('.dialog-edit-banner').waitFor({ state: 'hidden' });
+  assert.equal(await button('编辑弹窗 新增团队成员').count(), 0);
+  await button('撤销 Ctrl+Z').click();
+  await button('编辑弹窗 新增团队成员').waitFor();
+  await button('重做 Ctrl+Shift+Z').click();
+  await page.locator('.save-state[data-save-status="saved"]').waitFor();
+  await page.waitForFunction(async () => {
+    const { document: doc } = await (await fetch('/api/pages/default-page/document')).json();
+    return !doc.dialogs.some(d => d.title === '新增团队成员') && doc.elements.find(e => e.id === 'add').action === 'none';
+  });
+  await page.reload();
+  await page.locator('.studio[data-server-state="ready"]').waitFor();
+  await button('图层').click();
+  assert.equal(await button('编辑弹窗 新增团队成员').count(), 0);
+  await page.screenshot({ path: 'test-results/dialog-layers.png', fullPage: true });
   assert.deepEqual(errors, []);
   console.log('PASS: editable modal content, isolated layers/dimensions, drag/undo, runtime content, required/email validation, cancel/submit, independent targets, undo container creation.');
 } catch (error) {
