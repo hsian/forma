@@ -3,6 +3,7 @@ dist/
 *.log
 .env
 test-results/
+backups/
 data/
 *.db
 *.db-wal

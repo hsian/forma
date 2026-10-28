@@ -4,6 +4,28 @@
 
 ## 启动
 
+Windows 局域网部署可直接双击根目录的命令文件，服务器电脑先安装 Node.js 22 或更高版本，并复制完整项目文件夹。首次安装依赖需要联网；不需要从开发电脑复制 `node_modules`。
+
+| 命令文件 | 用途 |
+| --- | --- |
+| `start-lan.cmd` | 启动正式服务；首次自动安装依赖、构建和迁移，显示本机和局域网访问地址 |
+| `update-server.cmd` | 更新依赖、重新构建、迁移数据库并启动；适合复制新版程序后运行 |
+| `backup-data.cmd` | 单独备份正式数据库，可在服务运行时执行 |
+| `start-dev.cmd` | 启动本机开发环境，默认使用独立的开发数据库 |
+| `allow-lan.cmd` | 右键「以管理员身份运行」，放行同一子网的访问；首次需要或端口变化时执行 |
+
+平时双击 `start-lan.cmd` 即可，服务窗口保持打开，停止时按 Ctrl+C。防火墙放行适用于专用网络或域网络，默认端口为 6060，可在 `.env` 修改 `PORT`。
+
+**以后升级只做三步：**
+
+1. 在旧服务窗口按 Ctrl+C 停止服务。
+2. 复制新版程序覆盖原目录，保留服务器原有的 `.env`、`data/` 和 `backups/`。
+3. 双击 `update-server.cmd`，等待显示访问地址。
+
+命令文件不会自动下载新版代码。生产启动和升级都会先把现有数据库备份到 `backups/时间编号/`，再执行尚未执行过的数据库迁移；备份包含 SQLite 日志中尚未合并的数据。任一步骤失败会停止，并保留错误信息。开发默认用 `data/forma.dev.db`，生产默认用 `data/forma.db`；通常不要设置 `DATABASE_PATH`。AI 功能还需要在服务器上安装并登录所用的 Codex / Claude CLI。
+
+以下是手动命令方式：
+
 需要 Node.js 22 或更高版本。
 
 ```sh
@@ -11,7 +33,7 @@ npm install
 npm run dev
 ```
 
-打开 http://127.0.0.1:3000 。首次访问创建管理员账号；开发时 Fastify 和 Vite 共用一个端口，API 与前端同源。
+打开 http://127.0.0.1:6060 。首次访问创建管理员账号；开发时 Fastify 和 Vite 共用一个端口，API 与前端同源。
 
 ```sh
 npm run build
@@ -136,14 +158,15 @@ Codex 默认启用系统代理兼容，并对已有自定义 provider 关闭 Web
 
 保存失败时，当前窗口保留修改并显示重试按钮；其他窗口已更新同一页面时，服务器返回版本冲突并拒绝覆盖。核对本地修改后，可确认「重新载入」来读取服务器版本。这是覆盖保护，不是实时协同编辑。
 
-- 默认数据库：项目根目录下 `data/forma.db`，可通过 `DATABASE_PATH` 指定其他路径。
+- 数据库按启动方式分开：`npm run dev` 使用 `data/forma.dev.db`，`npm start` 使用 `data/forma.db`。现有 `data/forma.db` 保留为生产库，不移动、不复制或清空；开发库首次运行时独立初始化，账号、项目、页面、图片、版本和聊天记录互不共享。
+- 可通过 `DATABASE_PATH` 显式指定其他数据库，自动化测试继续用它指向临时库。该变量会覆盖环境默认路径；如果在公共 `.env` 中将它固定为同一路径，开发与生产仍会共用，所以正常使用无需设置它。
 - `data/` 和 SQLite 数据文件不纳入 Git；`drizzle/` 中的 SQL 迁移和元数据纳入 Git。
 - 首次启动自动创建默认项目与页面；后续启动只应用缺失迁移，不覆盖已有文档。
 - SQLite 开启外键、WAL 和写锁等待；页面 JSON、版本号及元信息在事务中保存。
 - 表结构：`projects`、`folders`、`pages`、`documents`、`assets`。项目和页面树已经接入；独立文件夹及资源表为后续文件管理准备，当前不提供资源上传界面。
 - 需要备份时，先停止服务，再复制整个 `data/` 目录。
 
-修改 `server/db/schema.ts` 后运行 `npm run db:generate` 生成迁移，再运行 `npm run db:migrate`；正常启动时也会自动应用迁移。运行时使用 Drizzle ORM 和 better-sqlite3，迁移工具为 Drizzle Kit。
+修改 `server/db/schema.ts` 后运行 `npm run db:generate` 生成迁移；`npm run db:migrate` 应用到开发库，`npm run db:migrate:production` 应用到生产库。正常启动时也会向当前环境的数据库应用缺失迁移。运行时使用 Drizzle ORM 和 better-sqlite3，迁移工具为 Drizzle Kit。
 
 接口：`GET /api/bootstrap` 返回默认页面、项目元信息及文档版本；`GET /api/projects`、`GET /api/projects/:projectId/pages` 列出元信息；`GET/PUT /api/pages/:pageId/document` 读取与保存文档。保存请求携带 `{ revision, document }`，格式错误返回 400，旧版本覆盖返回 409。
 

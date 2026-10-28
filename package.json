@@ -4,13 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch server/index.ts",
+    "dev": "tsx watch server/index.ts --development",
     "build": "tsc --noEmit && vite build",
     "start": "tsx server/index.ts --production",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "npm run build && node tests/run-browser.mjs",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx server/db/migrate.ts"
+    "db:migrate": "tsx server/db/migrate.ts --development",
+    "db:migrate:production": "tsx server/db/migrate.ts --production"
   },
   "dependencies": {
     "@ant-design/icons": "^6.0.0",

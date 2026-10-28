@@ -3,7 +3,7 @@ import { documentSchema } from '../server/document-validation';
 import { randomUUID } from 'node:crypto';
 
 // 本次交付的一次性数据写入脚本；没有添加产品导入入口或启动时植入逻辑。
-const base = process.env.TEST_URL || 'http://127.0.0.1:3000';
+const base = process.env.TEST_URL || 'http://127.0.0.1:6060';
 const projectId = process.argv[2];
 if (!projectId) throw Error('请明确指定已有项目 ID');
 const cookie = process.env.FORMA_SESSION_COOKIE;

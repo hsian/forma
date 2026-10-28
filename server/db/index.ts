@@ -5,9 +5,10 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as schema from './schema.js';
+import { resolveDatabasePath } from './config.js';
 
-export const defaultDatabasePath = fileURLToPath(new URL('../../data/forma.db', import.meta.url));
-export function openDatabase(filename = process.env.DATABASE_PATH || defaultDatabasePath) {
+export const defaultDatabasePath = resolveDatabasePath({ NODE_ENV: process.env.NODE_ENV });
+export function openDatabase(filename = resolveDatabasePath()) {
   const path = filename === ':memory:' ? filename : resolve(filename);
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const sqlite = new Database(path);
