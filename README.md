@@ -26,6 +26,8 @@ Windows 局域网部署可直接双击根目录的命令文件，服务器电脑
 
 以下是手动命令方式：
 
+命令文件安装依赖时使用 `npm ci --include=dev --ignore-scripts`，再执行 `npm rebuild esbuild` 并验证 SQLite 的内存读写。当前锁定的 `better-sqlite3 13` 已自带 Windows x64/ARM64 预编译模块，这样可避免 npm 从锁文件安装时误触发原生编译。下面的手动安装如遇到 `node-gyp` 错误，也可改用这两个命令。
+
 需要 Node.js 22 或更高版本。
 
 ```sh

@@ -46,9 +46,26 @@ function dependenciesReady(root) {
   try {
     const require = createRequire(join(root, 'package.json'));
     require.resolve('tsx/esm/api'); require.resolve('typescript'); require.resolve('vite');
-    execFileSync(process.execPath, ['-e', "const Database=require('better-sqlite3');const db=new Database(':memory:');db.close()"], { cwd: root, stdio: 'ignore', windowsHide: true });
+    verifySqlite(root);
     return true;
   } catch { return false; }
+}
+
+function verifySqlite(root) {
+  execFileSync(process.execPath, ['-e', "const Database=require('better-sqlite3');const db=new Database(':memory:');if(db.prepare('select 1 as ok').get().ok!==1)throw Error('SQLite check failed');db.close()"], { cwd: root, stdio: 'pipe', windowsHide: true });
+}
+
+async function installDependencies(execute, root, env) {
+  // better-sqlite3 13 ships N-API prebuilds. npm ci can lose gypfile:false
+  // from lockfile metadata and invoke node-gyp unnecessarily on Windows.
+  // Run only the build-tool installer needed by this project's locked dependencies.
+  await execute(['ci', '--include=dev', '--ignore-scripts'], root, env);
+  await execute(['rebuild', 'esbuild'], root, env);
+  try { verifySqlite(root); }
+  catch (error) {
+    const detail = error.stderr?.toString().trim() || error.message;
+    throw Error(`依赖已下载，但 SQLite 加载验证失败（Node ${process.version} / ${process.platform}-${process.arch}）：\n${detail}`);
+  }
 }
 
 function npmCli() {
@@ -119,7 +136,7 @@ export async function runLauncher(mode, options = {}) {
   let installed = false;
   if (mode !== 'backup' && !ready(root)) {
     console.log('首次运行：正在安装依赖，需要联网…');
-    await execute(['ci', '--include=dev'], root, env);
+    await installDependencies(execute, root, env);
     installed = true;
   }
   // Use the server's configuration rules in a short-lived process, avoiding locked build tools on Windows.
@@ -136,7 +153,7 @@ export async function runLauncher(mode, options = {}) {
   if (mode === 'backup') return;
   if (mode === 'update' && !installed) {
     console.log('正在更新依赖…');
-    await execute(['ci', '--include=dev'], root, env);
+    await installDependencies(execute, root, env);
   }
   if (production && (mode === 'update' || !existsSync(join(root, 'dist/index.html')))) await execute(['run', 'build'], root, env);
   if (production) await execute(['run', 'db:migrate:production'], root, env);

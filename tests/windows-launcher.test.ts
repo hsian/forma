@@ -50,7 +50,7 @@ test('生产更新在依赖更新和迁移前备份，失败后停止，不覆�
     assert.ok(readdirSync(join(root, 'backups')).length > 0, '执行依赖更新前已有备份');
     if (args.join(' ') === 'run db:migrate:production') throw Error('模拟迁移失败');
   } }), /模拟迁移失败/);
-  assert.deepEqual(calls, ['ci --include=dev', 'run build', 'run db:migrate:production']);
+  assert.deepEqual(calls, ['ci --include=dev --ignore-scripts', 'rebuild esbuild', 'run build', 'run db:migrate:production']);
   assert.equal(readFileSync(join(root, 'data/forma.dev.db'), 'utf8'), '开发数据不动');
   assert.equal(readFileSync(join(root, '.env'), 'utf8'), 'PORT=39991\nFORMA_AI_PROVIDER=auto\n');
 });
@@ -81,6 +81,6 @@ test('全新部署依次安装、构建、迁移并启动，不重复安装依�
   await runLauncher('update', { root, env: {}, dependenciesReady: () => false, checkPort: async () => {}, execute: async (args: string[], _root: string, env: NodeJS.ProcessEnv) => {
     calls.push(args.join(' ')); assert.equal(env.NODE_ENV, 'production'); assert.equal(env.HOST, '0.0.0.0');
   } });
-  assert.deepEqual(calls, ['ci --include=dev', 'run build', 'run db:migrate:production', 'start']);
+  assert.deepEqual(calls, ['ci --include=dev --ignore-scripts', 'rebuild esbuild', 'run build', 'run db:migrate:production', 'start']);
   assert.equal(existsSync(join(root, 'data/forma.dev.db')), false);
 });
