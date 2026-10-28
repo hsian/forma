@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { createServer } from 'node:net';
 
 const scripts = process.argv.slice(2);
-const suites = scripts.length ? scripts : ['chat-images.browser.mjs', 'lan-http.browser.mjs', 'navigation.browser.mjs', 'management-page.browser.mjs', 'annotations.browser.mjs', 'permissions.browser.mjs', 'auth.browser.mjs', 'sketch-upload.browser.mjs', 'page-designs.browser.mjs', 'design-ai.browser.mjs', 'image-prototype.browser.mjs', 'image-table.browser.mjs', 'image-paste.browser.mjs', 'sketch-drawing.browser.mjs', 'versions.browser.mjs', 'browser.mjs', 'dialog.browser.mjs', 'select.browser.mjs', 'antd-components.browser.mjs', 'bank-connect.browser.mjs', 'persistence.browser.mjs', 'projects.browser.mjs', 'account-select.browser.mjs', 'pan.browser.mjs', 'project-preview.browser.mjs', 'ai.browser.mjs', 'row-actions.browser.mjs'];
+const suites = scripts.length ? scripts : ['offline-version.browser.mjs', 'chat-images.browser.mjs', 'lan-http.browser.mjs', 'navigation.browser.mjs', 'management-page.browser.mjs', 'annotations.browser.mjs', 'permissions.browser.mjs', 'auth.browser.mjs', 'sketch-upload.browser.mjs', 'page-designs.browser.mjs', 'design-ai.browser.mjs', 'image-prototype.browser.mjs', 'image-table.browser.mjs', 'image-paste.browser.mjs', 'sketch-drawing.browser.mjs', 'versions.browser.mjs', 'browser.mjs', 'dialog.browser.mjs', 'select.browser.mjs', 'antd-components.browser.mjs', 'bank-connect.browser.mjs', 'persistence.browser.mjs', 'projects.browser.mjs', 'account-select.browser.mjs', 'pan.browser.mjs', 'project-preview.browser.mjs', 'ai.browser.mjs', 'row-actions.browser.mjs'];
 await mkdir('test-results', { recursive: true });
 for (const suite of suites) {
   if (!/^[a-z.-]+\.mjs$/.test(suite)) throw Error('无效测试脚本名');

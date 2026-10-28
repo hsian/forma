@@ -1,0 +1,55 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import Fastify from 'fastify';
+import { openDatabase } from '../server/db';
+import { createRepository } from '../server/db/repository';
+import { registerAuth } from '../server/auth';
+import { registerApi } from '../server/api';
+import { makeElement } from '../shared/model';
+import { offlineDocument } from '../shared/offline-version';
+import { versionSnapshot, renderVersionHtml } from '../server/version-export';
+
+const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+test('版本导出固定页面树和图片，资源去重、HTML 注入转义，且只允许项目成员读取', async () => {
+  const connection = openDatabase(':memory:'), repository = createRepository(connection.db); repository.initialize();
+  const app = Fastify(); const auth = registerAuth(app, connection.db); registerApi(app, repository, auth);
+  try {
+    const original = repository.readDocument('default-page')!;
+    const doc = structuredClone(original.document);
+    doc.elements.push({ ...makeElement('image'), id: 'backup-image', component: { src: png } });
+    doc.elements.push({ ...makeElement('text'), id: 'literal-text', text: '</script><script>window.exportInjected=true</script>' });
+    repository.saveDocument('default-page', original.revision, doc);
+    const child = repository.createPage('default-project', '历史子页面', 'default-page');
+    repository.saveDocument(child.id, 0, doc);
+    const version = repository.createVersion('default-project', 'V1 离线', '', '测试用户', repository.draftVersionManifest('default-project').stamp).version;
+    const snapshot = versionSnapshot(repository, 'default-project', version.id);
+    assert.equal(snapshot.pages.length, 2); assert.equal(Object.keys(snapshot.assets).length, 1);
+    assert.equal(snapshot.pages.find(page => page.id === child.id)!.parentId, 'default-page');
+    assert.deepEqual(offlineDocument(snapshot, 'default-page'), doc);
+    const current = repository.readDocument('default-page')!; const changed = structuredClone(current.document); changed.elements[0].text = '后续草稿';
+    repository.saveDocument('default-page', current.revision, changed); repository.deletePage(child.id);
+    assert.deepEqual(offlineDocument(versionSnapshot(repository, 'default-project', version.id), 'default-page'), doc);
+    const html = await renderVersionHtml(snapshot);
+    assert.ok(html.includes('data:text/javascript;base64,')); assert.ok(html.includes("connect-src 'none'"));
+    assert.equal(html.includes('</script><script>window.exportInjected'), false);
+    const payload = JSON.parse(/id="forma-offline-data" type="application\/json">([^]*?)<\/script>/.exec(html)![1]);
+    assert.equal(payload.documents['default-page'].elements.at(-1).text, '</script><script>window.exportInjected=true</script>');
+    assert.equal(JSON.stringify(payload).includes('/api/'), false);
+    assert.deepEqual(Object.keys(payload).sort(), ['assets', 'documents', 'exportedAt', 'format', 'formatVersion', 'pages', 'project', 'version']);
+    const endpoint = `/api/projects/default-project/versions/${version.id}/export.html`;
+    assert.equal((await app.inject(endpoint)).statusCode, 401);
+    const setup = await app.inject({ method: 'POST', url: '/api/auth/setup', payload: { username: 'admin', password: 'password-123' } });
+    const admin = String(setup.headers['set-cookie']).split(';')[0];
+    await app.inject({ method: 'POST', url: '/api/admin/users', headers: { cookie: admin }, payload: { username: 'outsider', password: 'password-123' } });
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'outsider', password: 'password-123' } });
+    const outsider = String(login.headers['set-cookie']).split(';')[0];
+    assert.equal((await app.inject({ url: endpoint, headers: { cookie: outsider } })).statusCode, 403);
+    const response = await app.inject({ url: endpoint, headers: { cookie: admin } });
+    assert.equal(response.statusCode, 200); assert.match(String(response.headers['content-type']), /text\/html/);
+    assert.match(String(response.headers['content-disposition']), /attachment;.*filename\*=UTF-8/);
+    const other = repository.createProject('其他项目');
+    assert.equal((await app.inject({ url: `/api/projects/${other.project.id}/versions/${version.id}/export.html`, headers: { cookie: admin } })).statusCode, 404);
+    repository.deleteVersion('default-project', version.id);
+    assert.deepEqual(offlineDocument(snapshot, 'default-page'), doc, '删除服务端版本不影响已导出的内容');
+  } finally { await app.close(); connection.close(); }
+});

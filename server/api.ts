@@ -6,6 +6,7 @@ import { saveDocumentSchema } from './document-validation.js';
 import { z } from 'zod';
 import type { AuthService } from './auth.js';
 import { VersionError } from './db/versions.js';
+import { renderVersionHtml, versionHtmlFilename, versionSnapshot } from './version-export.js';
 
 export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService) {
   registerSketchApi(app, repository, auth);
@@ -50,6 +51,14 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
     }), reply);
   });
   app.get<{ Params: { projectId: string; versionId: string } }>('/api/projects/:projectId/versions/:versionId', async (request, reply) => manage(() => repository.readVersion(request.params.projectId, request.params.versionId), reply));
+  app.get<{ Params: { projectId: string; versionId: string } }>('/api/projects/:projectId/versions/:versionId/export.html', async (request, reply) => {
+    try {
+      const snapshot = versionSnapshot(repository, request.params.projectId, request.params.versionId);
+      const html = await renderVersionHtml(snapshot);
+      const filename = encodeURIComponent(versionHtmlFilename(snapshot)).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16));
+      return reply.type('text/html; charset=utf-8').header('Content-Disposition', `attachment; filename="forma-version.html"; filename*=UTF-8''${filename}`).header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff').send(html);
+    } catch (error) { return manage(() => { throw error; }, reply); }
+  });
   app.get<{ Params: { projectId: string; versionId: string; snapshotPageId: string } }>('/api/projects/:projectId/versions/:versionId/pages/:snapshotPageId', async (request, reply) => manage(() => repository.readVersionDocument(request.params.projectId, request.params.versionId, request.params.snapshotPageId), reply));
   app.get<{ Params: { projectId: string; versionId: string; hash: string } }>('/api/projects/:projectId/versions/:versionId/assets/:hash', async (request, reply) => {
     try { const asset = repository.readVersionAsset(request.params.projectId, request.params.versionId, request.params.hash); return reply.header('Content-Type', asset.mime).header('X-Content-Type-Options', 'nosniff').header('Content-Security-Policy', "default-src 'none'; sandbox").send(Buffer.from(asset.data, 'base64')); }
