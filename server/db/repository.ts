@@ -1,5 +1,6 @@
 import { createVersionRepository } from './versions.js';
 import { createDesignRepository } from './designs.js';
+import { createPersonalComponentRepository } from './personal-components.js';
 import { and, asc, eq } from 'drizzle-orm';
 import { seedDocument, type PrototypeDocument } from '../../shared/model.js';
 import { projects, pages, documents } from './schema.js';
@@ -171,7 +172,7 @@ export function createRepository(db: AppDatabase) {
     });
   }
   return {
-    ...createVersionRepository(db), ...designs, initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
+    ...createPersonalComponentRepository(db), ...createVersionRepository(db), ...designs, initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
     createProject, renameProject, deleteProject, createPage, importPage, updatePage, duplicatePage, deletePage,
   };
 }

@@ -1,0 +1,97 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import Fastify from 'fastify';
+import { captureComponent, instantiateComponent } from '../shared/personal-components';
+import { seedDocument, makeElement, type PrototypeDocument } from '../shared/model';
+import { documentSchema } from '../server/document-validation';
+import { openDatabase } from '../server/db';
+import { createRepository } from '../server/db/repository';
+import { registerAuth } from '../server/auth';
+import { registerApi } from '../server/api';
+
+test('个人组件复制筛选关系和弹窗，移除外部关联，每次插入独立且可保存', () => {
+  const doc = structuredClone(seedDocument);
+  const input = doc.elements.find(element => element.id === 'search')!;
+  const button = doc.elements.find(element => element.id === 'query')!;
+  const table = doc.elements.find(element => element.id === 'users')!;
+  button.action = 'filter'; button.targetId = table.id;
+  table.visibleWhen = { sourceId: 'status', value: 'active' };
+  table.table = { columns: [{ key: 'name', title: '姓名', visibleWhen: { sourceId: 'status', value: 'active' } }], rows: [], pageSize: 10, filters: [{ sourceId: input.id, fields: ['name'], mode: 'contains', live: true }, { sourceId: 'status', fields: ['status'], mode: 'equals', live: true }] };
+  const original = JSON.stringify(doc);
+  const template = captureComponent(doc, ['search', 'query', 'users', 'add']);
+  assert.equal(JSON.stringify(doc), original);
+  assert.equal(template.annotations, undefined);
+  assert.equal(template.importInfo, undefined);
+  assert.equal(template.dialogs?.length, 1);
+  assert.ok(template.elements.length > 4);
+  assert.ok(documentSchema.safeParse(template).success);
+  const copiedTable = template.elements.find(element => element.kind === 'table')!;
+  assert.equal(copiedTable.visibleWhen, undefined);
+  assert.equal(copiedTable.table!.columns[0].visibleWhen, undefined);
+  assert.equal(copiedTable.table!.filters!.length, 1);
+  const copiedInput = template.elements.find(element => element.name === input.name)!;
+  assert.equal(copiedTable.table!.filters![0].sourceId, copiedInput.id);
+  assert.equal(template.elements.find(element => element.name === button.name)!.targetId, copiedTable.id);
+  const first = instantiateComponent(template);
+  const second = instantiateComponent(template, 100, 150);
+  assert.equal(first.selected.length, 4);
+  assert.ok(!first.elements.some(element => second.elements.some(other => other.id === element.id)));
+  assert.notEqual(first.dialogs[0].id, second.dialogs[0].id);
+  assert.equal(first.elements.find(element => element.name === '新增成员按钮')!.modalId, first.dialogs[0].id);
+  const target: PrototypeDocument = { width: 1040, height: 720, background: '#ffffff', elements: [...first.elements, ...second.elements], dialogs: [...first.dialogs, ...second.dialogs] };
+  assert.ok(documentSchema.safeParse(target).success);
+  first.elements[0].fill = '#000000';
+  assert.notEqual(template.elements[0].fill, '#000000');
+  assert.notEqual(second.elements[0].fill, '#000000');
+  const inside = instantiateComponent(template, 0, 0, 'target-dialog');
+  assert.ok(inside.elements.filter(element => inside.selected.includes(element.id)).every(element => element.parentId === 'target-dialog' && !element.locked));
+  const internal = template.elements.filter(element => !element.parentId);
+  assert.equal(Math.min(...internal.map(element => element.x)), 0);
+  assert.equal(Math.min(...internal.map(element => element.y)), 0);
+});
+
+test('弹窗内选区可保存为根元素，不携带未选中内容', () => {
+  const doc = structuredClone(seedDocument);
+  const input = doc.elements.find(element => element.parentId && element.kind === 'input')!;
+  const template = captureComponent(doc, [input.id]);
+  assert.equal(template.elements.length, 1);
+  assert.equal(template.elements[0].parentId, undefined);
+  assert.equal(template.elements[0].x, 0);
+  assert.ok(documentSchema.safeParse(template).success);
+  assert.throws(() => captureComponent(doc, []), /请先选中/);
+});
+
+test('个人组件 API 只允许访问本人模板，更新版本冲突保护和删除不影响页面', async () => {
+  const connection = openDatabase(':memory:');
+  const repository = createRepository(connection.db); repository.initialize();
+  const app = Fastify(); const auth = registerAuth(app, connection.db); registerApi(app, repository, auth);
+  try {
+    const cookie = (response: { headers: Record<string, unknown> }) => String(response.headers['set-cookie']).split(';')[0];
+    const admin = cookie(await app.inject({ method: 'POST', url: '/api/auth/setup', payload: { username: 'admin', password: 'password-123' } }));
+    await app.inject({ method: 'POST', url: '/api/admin/users', headers: { cookie: admin }, payload: { username: 'member', password: 'password-123' } });
+    const member = cookie(await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'member', password: 'password-123' } }));
+    const url = '/api/me/components';
+    const request = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, account: string, payload?: unknown) => app.inject({ method, url: path, headers: { cookie: account }, ...(payload ? { payload } : {}) });
+    assert.equal((await app.inject({ method: 'GET', url })).statusCode, 401);
+    const document = captureComponent(seedDocument, ['search', 'query']);
+    const created = await request('POST', url, member, { name: '个人筛选', document });
+    assert.equal(created.statusCode, 200, created.body);
+    const item = created.json();
+    assert.equal((await request('GET', url, member)).json().components.length, 1);
+    assert.equal((await request('GET', url, admin)).json().components.length, 0, '系统管理员也不能查看其他人的组件库');
+    const path = `${url}/${item.id}`;
+    const body = { name: '新名称', document, revision: item.revision };
+    assert.equal((await request('PUT', path, admin, body)).statusCode, 409);
+    assert.equal((await request('DELETE', path, admin)).statusCode, 404);
+    assert.equal((await request('PUT', path, member, body)).json().revision, 2);
+    assert.equal((await request('PUT', path, member, body)).statusCode, 409);
+    assert.equal((await request('POST', url, member, { name: '', document })).statusCode, 400);
+    assert.equal((await request('POST', url, member, { name: '注入账号', document, ownerId: item.ownerId })).statusCode, 400);
+    const invalid = { ...document, elements: [{ ...makeElement('button'), kind: 'invalid' }] };
+    assert.equal((await request('POST', url, member, { name: '非法组件', document: invalid })).statusCode, 400);
+    const before = repository.readDocument('default-page');
+    assert.equal((await request('DELETE', path, member)).statusCode, 200);
+    assert.equal((await request('GET', url, member)).json().components.length, 0);
+    assert.deepEqual(repository.readDocument('default-page'), before);
+  } finally { await app.close(); connection.close(); }
+});

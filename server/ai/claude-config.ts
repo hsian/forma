@@ -11,7 +11,7 @@ export async function claudeConfiguration(inherited: NodeJS.ProcessEnv = process
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('invalid settings');
     settings = value;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw Error('无法读取 Claude 用户 settings.json，请检查文件权限和 JSON 格式。');
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw Error('无法读取 AI 服务配置，请联系管理员检查文件权限和 JSON 格式。');
   }
   const env = { ...inherited };
   for (const [key, value] of Object.entries(settings.env || {})) {

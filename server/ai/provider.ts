@@ -141,19 +141,23 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
 export async function generate(prompt: string, signal: AbortSignal, onStatus: (text: string) => void, onText: (text: string) => void, image?: ImageInput, outputSchema: Record<string, unknown> = aiResultJsonSchema) {
   const requested = process.env.FORMA_AI_PROVIDER || 'auto';
   const first: Provider = requested === 'claude' ? 'claude' : 'codex';
-  try { onStatus(`正在由 ${first === 'codex' ? 'Codex' : 'Claude'} 处理`); return { raw: await invoke(first, prompt, signal, onText, image, outputSchema), provider: first }; }
+  try { onStatus('正在处理'); return { raw: await invoke(first, prompt, signal, onText, image, outputSchema), provider: first }; }
   catch (error) {
     if (requested === 'auto' && first === 'codex' && error instanceof ModelError && error.kind === 'quota' && !signal.aborted) {
-      onStatus('Codex 额度已用完，正在切换到 Claude');
+      onStatus('正在重试，请稍候');
       return { raw: await invoke('claude', prompt, signal, onText, image, outputSchema), provider: 'claude' as const };
     }
     throw error;
   }
 }
 export function friendlyError(error: unknown) {
-  if (error instanceof ModelError && error.kind === 'authentication') return error.provider === 'claude'
-    ? 'Claude CLI 认证失败，请检查所用服务的 API 地址和密钥配置；使用官方账号时请检查登录状态。本轮未修改原型。'
-    : 'Codex 登录已失效，请在终端运行 codex login 重新登录后发送。本轮未修改原型。';
-  if (error instanceof ModelError) return { authentication: '模型登录已失效，请重新登录后发送。', missing: '未找到模型命令，请在本机安装并登录 Codex 或 Claude，或配置本项目的命令路径。', timeout: '模型响应超时，可以重试。', cancelled: '已停止，本轮没有修改原型。', quota: '模型额度不足，请稍后重试或调整引擎配置。', failed: '模型调用失败，请检查本机模型命令的登录和网络配置。' }[error.kind];
+  if (error instanceof ModelError) return {
+    authentication: 'AI 服务认证失败，请联系管理员检查 API 地址和密钥或登录状态。本轮未修改原型。',
+    missing: 'AI 服务尚未配置，请联系管理员。',
+    timeout: '响应超时，请重试。',
+    cancelled: '已停止，本轮没有修改原型。',
+    quota: 'AI 服务暂不可用，请稍后重试或联系管理员。',
+    failed: '处理失败，请稍后重试；如仍失败，请联系管理员检查服务配置和网络。',
+  }[error.kind];
   return error instanceof Error ? error.message : '处理失败，请重试';
 }

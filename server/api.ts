@@ -2,7 +2,7 @@ import { registerSketchApi } from './sketch/routes.js';
 import { registerImagePrototype } from './ai/image-routes.js';
 import type { FastifyInstance } from 'fastify';
 import { createRepository, ManagementError } from './db/repository.js';
-import { saveDocumentSchema } from './document-validation.js';
+import { documentSchema, saveDocumentSchema } from './document-validation.js';
 import { z } from 'zod';
 import type { AuthService } from './auth.js';
 import { VersionError } from './db/versions.js';
@@ -12,6 +12,25 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
   registerSketchApi(app, repository, auth);
   registerImagePrototype(app, repository, auth);
   app.get('/api/health', async () => ({ status: 'ok', storage: 'sqlite', app: 'Forma' }));
+  // Owner identity always comes from the authenticated session, including for admins.
+  app.get('/api/me/components', async (request, reply) => request.identity ? { components: repository.listPersonalComponents(request.identity.user.id) } : reply.code(401).send({ message: '请先登录' }));
+  const componentInput = z.object({ name: z.string().trim().min(1).max(120), document: documentSchema.refine(doc => doc.elements.some(element => !element.parentId), '请选择至少一个元素'), revision: z.number().int().positive().optional() }).strict();
+  app.post('/api/me/components', async (request, reply) => {
+    if (!request.identity) return reply.code(401).send({ message: '请先登录' });
+    const parsed = componentInput.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ message: '组件名称或内容不正确，请选择有效元素并填写 1–120 字的名称' });
+    return repository.savePersonalComponent(request.identity.user.id, parsed.data.name, parsed.data.document);
+  });
+  app.put<{ Params: { componentId: string } }>('/api/me/components/:componentId', async (request, reply) => {
+    if (!request.identity) return reply.code(401).send({ message: '请先登录' });
+    const parsed = componentInput.safeParse(request.body);
+    if (!parsed.success || !parsed.data.revision) return reply.code(400).send({ message: '组件名称或内容不正确，请刷新后重试' });
+    return repository.savePersonalComponent(request.identity.user.id, parsed.data.name, parsed.data.document, request.params.componentId, parsed.data.revision) || reply.code(409).send({ message: '组件已更新或删除，请刷新我的组件后重试' });
+  });
+  app.delete<{ Params: { componentId: string } }>('/api/me/components/:componentId', async (request, reply) => {
+    if (!request.identity) return reply.code(401).send({ message: '请先登录' });
+    return repository.deletePersonalComponent(request.identity.user.id, request.params.componentId) ? { ok: true } : reply.code(404).send({ message: '组件不存在' });
+  });
   app.get<{ Querystring: { pageId?: string; projectId?: string } }>('/api/bootstrap', async (request, reply) => {
     if (!auth) return repository.bootstrap(request.query.pageId);
     const user = request.identity!.user;

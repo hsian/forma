@@ -39,12 +39,13 @@ test('独立子进程适配 Codex 和 Claude，只在明确额度耗尽时接续
     const status: string[] = [];
     assert.equal((await generate(prompt('修改'), new AbortController().signal, text => status.push(text), () => {})).provider, 'codex');
     assert.equal((await generate(prompt('QUOTA'), new AbortController().signal, text => status.push(text), () => {})).provider, 'claude');
-    assert.ok(status.some(text => text.includes('切换')));
+    assert.ok(status.includes('正在重试，请稍候'));
+    assert.doesNotMatch(status.join(' '), /codex|claude|模型/i);
     await assert.rejects(generate(prompt('429'), new AbortController().signal, () => {}, () => {}), /failed/);
     const beforeAuth = Date.now();
     const authStatus: string[] = [];
     await assert.rejects(generate(prompt('AUTH'), new AbortController().signal, text => authStatus.push(text), () => {}), error => {
-      assert.match(friendlyError(error), /Codex 登录已失效.*codex login/);
+      assert.match(friendlyError(error), /AI 服务认证失败/);
       return true;
     });
     assert.ok(Date.now() - beforeAuth < 5000, '登录失效应立即结束，不等待超时');

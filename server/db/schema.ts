@@ -1,6 +1,15 @@
 import { sqliteTable, text, integer, primaryKey, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { PrototypeDocument } from '../../shared/model.js';
 
+export const personalComponents = sqliteTable('personal_components', {
+  id: text('id').primaryKey(),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  document: text('document', { mode: 'json' }).$type<PrototypeDocument>().notNull(),
+  revision: integer('revision').notNull().default(1),
+  updatedAt: integer('updated_at').notNull(),
+});
+
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(), username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(), role: text('role').$type<'admin' | 'member'>().notNull(),

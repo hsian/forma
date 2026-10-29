@@ -1,0 +1,23 @@
+.library-modes { display: flex; gap: 4px; margin: 0 14px 10px; padding: 3px; background: #f1f2f6; border-radius: 7px; }
+.library-modes button { flex: 1; border: 0; background: transparent; border-radius: 5px; padding: 7px 0; color: #73798c; cursor: pointer; font: inherit; font-size: 12px; }
+.library-modes button.active { background: #fff; color: #635bff; box-shadow: 0 1px 4px #20233a12; }
+.personal-components { padding: 0 14px 20px; }
+.personal-components-actions { display: flex; gap: 6px; margin-bottom: 12px; }
+.personal-component-save { display: flex; flex: 1; min-width: 0; }
+.personal-component-save > button { width: 100%; }
+.personal-component-save > button:disabled { pointer-events: none; }
+.personal-components-note { color: #858b9c; font-size: 12px; line-height: 1.7; margin: 10px 0 14px; }
+.personal-components-loading { text-align: center; padding: 30px; }
+.personal-component-card { margin-bottom: 12px; border: 1px solid #e7e9f0; border-radius: 8px; overflow: hidden; background: #fff; }
+.personal-component-insert { display: block; width: 100%; border: 0; background: transparent; cursor: grab; text-align: left; color: #35394b; }
+.personal-component-insert[aria-disabled="true"] { cursor: default; opacity: .65; }
+.personal-component-insert:hover { background: #fafaff; }
+.personal-component-heading { display: flex; align-items: center; gap: 4px; padding: 8px 6px 8px 10px; }
+.personal-component-heading > strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.personal-component-preview { height: 124px; display: flex; align-items: center; justify-content: center; background: #f7f8fc; overflow: hidden; pointer-events: none; padding: 12px; }
+.personal-component-surface { position: relative; transform-origin: top left; pointer-events: none; }
+.personal-component-actions { display: flex; flex-shrink: 0; gap: 2px; }
+.personal-component-actions .ant-btn { color: #858b9c; }
+.personal-component-actions .ant-btn:hover { color: #635bff; }
+.personal-component-name { display: block; margin: 18px 0; }
+.personal-component-name input { margin-top: 8px; }
