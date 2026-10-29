@@ -6,6 +6,8 @@ import type { AppDatabase } from './db/index.js';
 import { users, sessions, projects, projectMembers, pages, pageLeases } from './db/schema.js';
 import type { AuthUser } from '../shared/auth.js';
 import { permissionService, registerPermissionRoutes } from './permissions.js';
+import { isPublicMcpRead } from './mcp/routes.js';
+import { isPublicMcpTransport } from './mcp/http.js';
 
 declare module 'fastify' { interface FastifyRequest { identity: { user: AuthUser; sessionHash: string } | null } }
 const username = z.string().trim().min(2).max(32).regex(/^[\p{L}\p{N}_.-]+$/u).transform(value => value.toLowerCase());
@@ -49,11 +51,13 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
   app.addHook('onRequest', async (request, reply) => {
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/')) return;
+    if (isPublicMcpRead(request.method, path)) return;
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
       const origin = request.headers.origin;
       if (origin) { try { if (new URL(origin).host !== request.headers.host) return fail(reply, 403, '请求来源不正确'); } catch { return fail(reply, 403, '请求来源不正确'); } }
       if (request.headers['sec-fetch-site'] === 'cross-site') return fail(reply, 403, '请求来源不正确');
     }
+    if (isPublicMcpTransport(request.method, path)) return;
     const cookie = request.headers.cookie?.split(';').map(value => value.trim()).find(value => value.startsWith('forma_session='))?.slice(14);
     if (cookie && /^[A-Za-z0-9_-]{43}$/.test(cookie)) {
       const session = db.select().from(sessions).where(and(eq(sessions.tokenHash, hash(cookie)), gt(sessions.expiresAt, now()))).get();
@@ -67,6 +71,8 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
   app.addHook('preHandler', async (request, reply) => {
     const path = request.url.split('?')[0];
     if (!path.startsWith('/api/') || ['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup'].includes(path)) return;
+    if (isPublicMcpRead(request.method, path)) return;
+    if (isPublicMcpTransport(request.method, path)) return;
     if (!request.identity || !db.select().from(sessions).where(and(eq(sessions.tokenHash, request.identity.sessionHash), gt(sessions.expiresAt, now()))).get()) return fail(reply, 401, '请先登录');
     const freshUser = db.select().from(users).where(eq(users.id, request.identity.user.id)).get();
     if (!freshUser?.enabled) return fail(reply, 401, '账号已停用');

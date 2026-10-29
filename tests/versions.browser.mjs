@@ -10,6 +10,10 @@ const page = await authenticatedPage(browser, { viewport: { width: 1600, height:
 const errors = []; page.on('pageerror', error => errors.push(error.message));
 const base = process.env.TEST_URL, root = `${base}/api/projects/default-project/versions`;
 const button = name => page.getByRole('button', { name, exact: true });
+async function versionAction(card, name) {
+  await card.getByRole('button', { name: /的更多操作$/ }).click();
+  await page.getByRole('menuitem', { name, exact: true }).click();
+}
 async function create(name) {
   await button('确认新的迭代版本').click();
   await page.getByRole('textbox', { name: '迭代版本名称', exact: true }).fill(name);
@@ -26,7 +30,40 @@ try {
   assert.equal(await page.locator('.left-panel .version-controls').count(), 0);
   assert.equal(await page.locator('.right-panel .version-panel').count(), 1);
   const v1 = await create('V1.0');
-  const popup = page.waitForEvent('popup'); await v1.getByRole('button', { name: '查看版本', exact: true }).click(); preview = await popup;
+  assert.equal(await v1.getByRole('button').count(), 1);
+  await v1.getByRole('button', { name: /的更多操作$/ }).click();
+  await page.getByRole('menuitem', { name: '接入 MCP', exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/version-actions-menu.png', animations: 'disabled' });
+  await page.getByRole('menuitem', { name: '接入 MCP', exact: true }).click();
+  const mcp = page.getByRole('dialog').filter({ hasText: '接入 MCP · V1.0' });
+  const frozenVersion = (await (await page.request.get(root)).json()).versions.find(version => version.name === 'V1.0');
+  assert.equal(await mcp.getByRole('textbox', { name: 'MCP 本机项目目录', exact: true }).count(), 0);
+  const endpoint = await mcp.getByRole('textbox', { name: 'MCP 地址', exact: true }).inputValue();
+  assert.equal(endpoint, `${base}/mcp`);
+  const versionLink = new URL(await mcp.getByRole('textbox', { name: '原型版本链接', exact: true }).inputValue());
+  assert.equal(versionLink.searchParams.get('projectId'), 'default-project');
+  assert.equal(versionLink.searchParams.get('versionId'), frozenVersion.id);
+  const handshake = await page.request.post(endpoint, { headers: { accept: 'application/json, text/event-stream' }, data: { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'browser-regression', version: '1' } } } });
+  assert.equal(handshake.status(), 200);
+  assert.equal((await handshake.json()).result.serverInfo.name, 'forma-prototype');
+  assert.equal(await mcp.getByRole('button', { name: '复制 MCP 地址', exact: true }).isEnabled(), true);
+  await mcp.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {}))));
+  await page.screenshot({ path: 'test-results/version-mcp-simple.png' });
+  await mcp.getByText('其他电脑连接 / 手动配置', { exact: true }).click();
+  const template = mcp.getByRole('textbox', { name: 'MCP 配置模板', exact: true });
+  assert.match(await template.inputValue(), /\[mcp_servers.forma_prototype\]/);
+  assert.ok((await template.inputValue()).includes(`${base}/mcp`));
+  assert.equal((await template.inputValue()).includes(frozenVersion.id), false);
+  await mcp.getByRole('tab', { name: 'Claude Code', exact: true }).click();
+  const connection = JSON.parse(await template.inputValue()).mcpServers.forma_prototype;
+  assert.deepEqual(connection, { type: 'http', url: endpoint });
+  await mcp.getByRole('textbox', { name: 'MCP 原型服务地址', exact: true }).fill('http://192.168.1.20:6060');
+  assert.ok((await mcp.getByRole('textbox', { name: 'MCP 地址', exact: true }).inputValue()).startsWith('http://192.168.1.20:6060/'));
+  await mcp.getByRole('textbox', { name: 'MCP 原型服务地址', exact: true }).fill(base);
+  assert.equal(await mcp.getByRole('button', { name: '复制配置', exact: true }).isEnabled(), true);
+  await page.screenshot({ path: 'test-results/version-mcp-connection.png', animations: 'disabled' });
+  await mcp.getByRole('button', { name: '关闭', exact: true }).last().click();
+  const popup = page.waitForEvent('popup'); await v1.getByRole('link', { name: 'V1.0', exact: true }).click(); preview = await popup;
   preview.on('pageerror', error => errors.push(error.message));
   await preview.locator('.preview-page').waitFor();
   assert.match(preview.url(), /versionId=/);
@@ -48,7 +85,7 @@ try {
   await button('项目版本管理').click(); await create('V1.1');
   assert.equal((await (await page.request.get(root)).json()).versions.length, 2);
   await page.screenshot({ path: 'test-results/version-manager.png' });
-  await v1.getByRole('button', { name: '新建草稿', exact: true }).click();
+  await versionAction(v1, '新建草稿');
   await page.getByRole('dialog').filter({ hasText: '基于「V1.0」' }).getByRole('button', { name: '新建草稿项目', exact: true }).click();
   await page.locator('.studio[data-server-state="ready"] .node[data-id="title"]').getByText('用户管理', { exact: true }).waitFor();
   const projectId = await page.getByRole('combobox', { name: '当前项目', exact: true }).evaluate(element => element.closest('.ant-select').innerText);

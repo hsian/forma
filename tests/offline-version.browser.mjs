@@ -41,7 +41,8 @@ try {
   await editor.getByRole('button', { name: '确认固定版本', exact: true }).click();
   const card = editor.locator('.version-card').filter({ hasText: '离线 V1' }); await card.waitFor();
   const downloadEvent = editor.waitForEvent('download');
-  await card.getByRole('button', { name: '导出 HTML', exact: true }).click();
+  await card.getByRole('button', { name: /的更多操作$/ }).click();
+  await editor.getByRole('menuitem', { name: '导出 HTML', exact: true }).click();
   const download = await downloadEvent;
   assert.match(download.suggestedFilename(), /离线 V1\.html$/);
   const file = resolve('test-results/离线原型 V1.html'); await download.saveAs(file);

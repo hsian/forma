@@ -7,8 +7,12 @@ import { z } from 'zod';
 import type { AuthService } from './auth.js';
 import { VersionError } from './db/versions.js';
 import { renderVersionHtml, versionHtmlFilename, versionSnapshot } from './version-export.js';
+import { registerPrototypeMcpReads } from './mcp/routes.js';
+import { registerPrototypeMcpHttp } from './mcp/http.js';
 
 export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService) {
+  registerPrototypeMcpReads(app, repository);
+  registerPrototypeMcpHttp(app, repository);
   registerSketchApi(app, repository, auth);
   registerImagePrototype(app, repository, auth);
   app.get('/api/health', async () => ({ status: 'ok', storage: 'sqlite', app: 'Forma' }));

@@ -34,7 +34,7 @@ if (isProduction()) {
   const vite = await createServer({ server: { middlewareMode: true }, appType: 'spa' });
   await app.register(middie);
   app.use((request, response, next) => {
-    if (request.url?.startsWith('/api/')) return next();
+    if (request.url?.startsWith('/api/') || request.url?.split('?')[0] === '/mcp') return next();
     vite.middlewares(request, response, next);
   });
   app.addHook('onClose', async () => { await vite.close(); });
