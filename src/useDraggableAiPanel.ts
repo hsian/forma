@@ -75,11 +75,15 @@ export function useDraggableAiPanel(visible: boolean, expanded: boolean) {
   function resizeMove(event: PointerEvent<HTMLDivElement>) {
     const start = resize.current, parent = ref.current?.offsetParent;
     if (!start || start.pointerId !== event.pointerId || !(parent instanceof HTMLElement)) return;
-    const maxWidth = parent.clientWidth - start.start.x - 8, maxHeight = parent.clientHeight - start.start.y - 8;
-    setSize({
-      width: Math.max(Math.min(480, maxWidth), Math.min(maxWidth, start.size.width + (start.direction.includes('e') ? event.clientX - start.x : 0))),
-      height: Math.max(Math.min(280, maxHeight), Math.min(maxHeight, start.size.height + (start.direction.includes('s') ? event.clientY - start.y : 0))),
-    });
+    const dx = event.clientX - start.x, dy = event.clientY - start.y;
+    let left = start.start.x, top = start.start.y, right = left + start.size.width, bottom = top + start.size.height;
+    const minWidth = Math.min(480, parent.clientWidth - 16), minHeight = Math.min(280, parent.clientHeight - 16);
+    if (start.direction.includes('w')) left = Math.max(8, Math.min(right - minWidth, left + dx));
+    if (start.direction.includes('e')) right = Math.min(parent.clientWidth - 8, Math.max(left + minWidth, right + dx));
+    if (start.direction.includes('n')) top = Math.max(8, Math.min(bottom - minHeight, top + dy));
+    if (start.direction.includes('s')) bottom = Math.min(parent.clientHeight - 8, Math.max(top + minHeight, bottom + dy));
+    setPosition({ x: left, y: top });
+    setSize({ width: right - left, height: bottom - top });
     event.preventDefault(); event.stopPropagation();
   }
   function resizeEnd(event: PointerEvent<HTMLDivElement>) {

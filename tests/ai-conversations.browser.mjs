@@ -64,6 +64,23 @@ try {
   await button('展开 AI 对话记录').click();
   assert.ok(Math.abs((await panel.boundingBox()).height - beforeCollapse.height) < 2);
   await resizeBy(160, 100);
+  for (const direction of ['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw']) {
+    const initial = await panel.boundingBox();
+    const dx = /[ew]/.test(direction) ? 20 : 0, dy = /[ns]/.test(direction) ? 20 : 0;
+    async function dragEdge(x, y) {
+      const edge = await page.locator('.ai-resize-' + direction).boundingBox();
+      await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+      await page.mouse.down(); await page.mouse.move(edge.x + edge.width / 2 + x, edge.y + edge.height / 2 + y, { steps: 5 }); await page.mouse.up();
+    }
+    await dragEdge(dx, dy);
+    const changed = await panel.boundingBox();
+    assert.ok(Math.abs(changed.width - initial.width - (direction.includes('w') ? -dx : dx)) < 2, direction + ' width');
+    assert.ok(Math.abs(changed.height - initial.height - (direction.includes('n') ? -dy : dy)) < 2, direction + ' height');
+    assert.ok(Math.abs(changed.x - initial.x - (direction.includes('w') ? dx : 0)) < 2, direction + ' left');
+    assert.ok(Math.abs(changed.y - initial.y - (direction.includes('n') ? dy : 0)) < 2, direction + ' top');
+    await dragEdge(-dx, -dy);
+  }
+  assert.equal(await page.locator('.ai-resize-se').evaluate(element => getComputedStyle(element, '::after').content), 'none');
   await page.screenshot({ path: 'test-results/ai-panel-resize.png', fullPage: true });
   await page.keyboard.press('Control+Backquote'); await panel.waitFor({ state: 'hidden' });
   await page.keyboard.press('Control+Backquote'); await panel.waitFor();
