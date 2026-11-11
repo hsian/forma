@@ -17,6 +17,7 @@ if (context.message.includes('延迟') || context.message.includes('停止测试
 const id = context.selectedIds[0] || 'query';
 const result = { reply: '已生成按钮颜色调整，可以在画布中查看。', operations: [{ type: 'updateElement', targetId: id, kind: '', properties: JSON.stringify({ fill: '#1677ff' }) }] };
 if (context.message.includes('只讨论')) { result.reply = '可以调整按钮颜色，目前没有修改页面。'; result.operations = []; }
+if (context.message.includes('历史计数测试')) { result.reply = `历史消息数：${context.history.length}`; result.operations = []; }
 if (context.message.includes('不合法')) result.operations[0].properties = '{"fontSize":10}';
 if (context.message.includes('自动修正测试') && !input.includes('校验修正请求：')) result.operations[0].properties = '{"fill":"red"}';
 const analysisReply = context.scope === 'design-analysis' ? { reply: `水平间距 ${context.measurement.spacing?.horizontalGap ?? '未选两个图层'}px；填充 ${context.measurement.selected[0]?.fill || '未选图层'}；字号 ${context.measurement.selected[0]?.fontSize ?? '未知'}px。` } : result;

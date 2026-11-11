@@ -1,3 +1,4 @@
+import { AiConversationMenu } from './AiConversationMenu';
 import { randomId } from '../shared/uuid';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Tooltip } from 'antd';
@@ -15,8 +16,10 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
   const { doc, selected } = useEditor();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AiMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => preference(`forma:ai-draft:${session.currentPageId}`, ''));
   const [busy, setBusy] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [status, setStatus] = useState('');
   const [live, setLive] = useState('');
   const [error, setError] = useState('');
@@ -34,7 +37,7 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
     const response = await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/messages`, { signal });
     const result = await response.json();
     if (!response.ok) throw Error(result.message || '无法读取对话');
-    if (mounted.current && !signal?.aborted) setMessages(result.messages);
+    if (mounted.current && !signal?.aborted) { setMessages(result.messages); setConversationId(result.conversation?.id || null); }
   }
   useEffect(() => {
     mounted.current = true;
@@ -46,7 +49,7 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
     await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/messages/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
   }
   async function submit() {
-    if (sending.current || (!draft.trim() && !attachment.image) || attachment.reading || loading || session.server !== 'ready' || !session.canEdit) return;
+    if (sending.current || (!draft.trim() && !attachment.image) || attachment.reading || loading || managing || session.server !== 'ready' || !session.canEdit) return;
     const prompt = draft.trim() || '请结合当前原型分析这张图片。'; const image = attachment.image?.url; const selectedIds = [...selected];
     const abort = new AbortController(); controller.current = abort; sending.current = true;
     setBusy(true); setError(''); setLive(''); setStatus('正在保存当前原型'); setDraft('');
@@ -59,7 +62,7 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
       if (abort.signal.aborted || !mounted.current) return;
       const source = structuredClone(useEditor.getState().doc); const fingerprint = canonicalDocument(source);
       setMessages(old => [...old, { id: randomId(), role: 'user', content: prompt + (image ? '\n[附图，仅供本轮参考]' : ''), status: 'done', provider: '', createdAt: Date.now() }]);
-      const response = await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/turn`, { method: 'POST', signal: abort.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, image, selectedIds, dialogId, baseDocument: source }) });
+      const response = await fetch(`/api/pages/${encodeURIComponent(pageId)}/ai/turn`, { method: 'POST', signal: abort.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, conversationId, image, selectedIds, dialogId, baseDocument: source }) });
       if (!response.ok) { const value = await response.json(); throw Error(value.message || '发送失败'); }
       const reader = response.body?.getReader(); if (!reader) throw Error('未收到有效响应');
       const decoder = new TextDecoder(); let buffer = '';
@@ -113,10 +116,10 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
   const notice = error || (busy ? status || 'AI 正在处理' : latest?.role === 'assistant' ? `${labels[latest.status] ? labels[latest.status] + ' · ' : ''}${latest.content}` : '');
   return <section id="ai-assistant-panel" className={`ai-panel ${open ? 'history-open' : ''}`} aria-label="AI 助手" aria-busy={busy || loading || attachment.reading} aria-keyshortcuts="Control+`" hidden={!visible}>
     <div className="ai-history" id="ai-panel-history" hidden={!open}>
-      <div className="ai-history-header"><strong>AI 对话</strong><span title={scope}>{scope}</span><Button type="text" size="small" aria-label="收起 AI 对话记录" title="收起对话记录" icon={<MinusOutlined/>} onClick={() => setOpen(false)}/></div>
+      <div className="ai-history-header"><strong>AI 对话</strong><span title={scope}>{scope}</span><AiConversationMenu key={pageId} session={session} disabled={busy || loading} currentId={conversationId} onWorking={setManaging} onChanged={async reset => { await loadMessages(); if (reset) { setError(''); setLive(''); setStatus(''); setDraft(''); attachment.clear(); } }}/><Button type="text" size="small" aria-label="收起 AI 对话记录" title="收起对话记录" icon={<MinusOutlined/>} onClick={() => setOpen(false)}/></div>
       <div className="ai-messages" ref={log} role="log" aria-label="AI 对话记录" aria-live="polite">{!messages.length && !busy && <div className="ai-welcome">描述想修改的内容，对话记录会显示在这里。</div>}{messages.map(message => <div key={message.id} className={`ai-message ${message.role}`}><div className="ai-message-heading">{message.role === 'user' ? '你' : 'AI 助手'}<span>{labels[message.status] || ''}</span></div><div className="ai-message-text" role={message.status === 'error' ? 'alert' : undefined}>{message.content || '处理已中断，可重新发送。'}</div></div>)}{busy && <div className="ai-live"><span className="ai-working-dot"/>{live || status || '正在处理'}</div>}{error && !errorInHistory && <div className="ai-error" role="alert">{error}</div>}</div>
     </div>
-    <div className="ai-composer">{attachment.preview}<div className="ai-input-row"><Tooltip title={scope}><span className="ai-input-mark" aria-label={scope}><RobotOutlined/></span></Tooltip><Input.TextArea onPaste={attachment.onPaste} aria-label="AI 修改要求" placeholder={selected.length ? `修改选中的${selected.length}个元素…` : '描述你想修改的原型…'} value={draft} autoSize={{ minRows: 1, maxRows: 3 }} maxLength={6000} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}/><Tooltip title={open ? '收起对话记录' : '查看对话记录'}><Button type="text" aria-label={open ? '折叠 AI 对话记录' : '展开 AI 对话记录'} aria-expanded={open} aria-controls="ai-panel-history" icon={<CommentOutlined/>} onClick={() => setOpen(value => !value)}/></Tooltip>{busy ? <Tooltip title="停止生成"><Button aria-label="停止 AI 生成" icon={<StopOutlined/>} onClick={() => { controller.current?.abort(); }}/></Tooltip> : <Tooltip title="发送 · Enter（Shift+Enter 换行）"><Button type="primary" aria-label="发送 AI 修改要求" disabled={(!draft.trim() && !attachment.image) || attachment.reading || loading || session.server !== 'ready' || !session.canEdit} icon={<SendOutlined/>} onClick={() => { void submit(); }}/></Tooltip>}</div>
+    <div className="ai-composer">{attachment.preview}<div className="ai-input-row"><Tooltip title={scope}><span className="ai-input-mark" aria-label={scope}><RobotOutlined/></span></Tooltip><Input.TextArea onPaste={attachment.onPaste} aria-label="AI 修改要求" placeholder={selected.length ? `修改选中的${selected.length}个元素…` : '描述你想修改的原型…'} value={draft} autoSize={{ minRows: 1, maxRows: 3 }} maxLength={6000} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}/><Tooltip title={open ? '收起对话记录' : '查看对话记录'}><Button type="text" aria-label={open ? '折叠 AI 对话记录' : '展开 AI 对话记录'} aria-expanded={open} aria-controls="ai-panel-history" icon={<CommentOutlined/>} onClick={() => setOpen(value => !value)}/></Tooltip>{busy ? <Tooltip title="停止生成"><Button aria-label="停止 AI 生成" icon={<StopOutlined/>} onClick={() => { controller.current?.abort(); }}/></Tooltip> : <Tooltip title="发送 · Enter（Shift+Enter 换行）"><Button type="primary" aria-label="发送 AI 修改要求" disabled={(!draft.trim() && !attachment.image) || attachment.reading || loading || managing || session.server !== 'ready' || !session.canEdit} icon={<SendOutlined/>} onClick={() => { void submit(); }}/></Tooltip>}</div>
       {notice && !open && <div className={`ai-inline-notice ${error ? 'is-error' : ''}`} role={error ? 'alert' : 'status'} aria-live="polite"><button title={notice} onClick={() => setOpen(true)}>{busy && <span className="ai-working-dot"/>}<span>{notice}</span></button></div>}
     </div>
   </section>;

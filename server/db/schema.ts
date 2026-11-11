@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, primaryKey, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey, index, uniqueIndex, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
 import type { PrototypeDocument } from '../../shared/model.js';
 
 export const personalComponents = sqliteTable('personal_components', {
@@ -103,13 +104,21 @@ export const assets = sqliteTable('assets', {
   size: integer('size').notNull(),
   createdAt: integer('created_at').notNull(),
 });
+export const aiConversations = sqliteTable('ai_conversations', {
+  id: text('id').primaryKey(),
+  pageId: text('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+  title: text('title').notNull().default('新对话'),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at').notNull(),
+}, table => [uniqueIndex('ai_conversations_current').on(table.pageId).where(sql`${table.archived} = 0`)]);
 export const aiMessages = sqliteTable('ai_messages', {
   id: text('id').primaryKey(),
+  conversationId: text('conversation_id').references(() => aiConversations.id, { onDelete: 'cascade' }),
   pageId: text('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
   role: text('role').$type<'user' | 'assistant'>().notNull(),
   content: text('content').notNull(), status: text('status').notNull(), provider: text('provider').notNull().default(''),
   createdAt: integer('created_at').notNull(),
-});
+}, table => [index('ai_messages_conversation').on(table.conversationId, table.createdAt)]);
 
 export const pageBlobs = sqliteTable('page_blobs', { hash: text('hash').primaryKey(), content: text('content', { mode: 'json' }).$type<PrototypeDocument>().notNull(), bytes: integer('bytes').notNull() });
 export const versionAssetBlobs = sqliteTable('version_asset_blobs', { hash: text('hash').primaryKey(), mime: text('mime').notNull(), data: text('data').notNull(), bytes: integer('bytes').notNull() });

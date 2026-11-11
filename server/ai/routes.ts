@@ -1,9 +1,10 @@
+import { registerConversations } from './conversations.js';
 import type { FastifyInstance } from 'fastify';
 import { registerDesignAi } from './design-routes.js';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/index.js';
-import { aiMessages, pages, documents } from '../db/schema.js';
+import { aiMessages, aiConversations, pages, documents } from '../db/schema.js';
 import { documentSchema } from '../document-validation.js';
 import { canonicalDocument, type AiEvent, type AiMessage } from '../../shared/ai.js';
 import { aiPropertySchemas } from './operations.js';
@@ -41,11 +42,12 @@ export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthSer
   registerDesignAi(app, db, auth);
   const active = new Map<string, AbortController>();
   db.update(aiMessages).set({ status: 'error', content: '上次处理因服务重启中断，未自动应用。' }).where(eq(aiMessages.status, 'running')).run();
-  const history = (pageId: string) => db.select().from(aiMessages).where(eq(aiMessages.pageId, pageId)).orderBy(desc(aiMessages.createdAt)).limit(80).all().reverse();
+  const conversations = registerConversations(app, db, active);
+  const history = conversations.history;
   app.get('/api/ai/config', async () => ({ provider: process.env.FORMA_AI_PROVIDER || 'auto', codex: !!resolveCli('codex'), claude: !!resolveCli('claude') }));
   app.get<{ Params: { pageId: string } }>('/api/pages/:pageId/ai/messages', async (request, reply) => {
     if (!db.select().from(pages).where(eq(pages.id, request.params.pageId)).get()) return reply.code(404).send({ message: '页面不存在' });
-    return { messages: history(request.params.pageId) };
+    return { messages: history(request.params.pageId), conversation: conversations.current(request.params.pageId) || null };
   });
   app.patch<{ Params: { pageId: string; messageId: string } }>('/api/pages/:pageId/ai/messages/:messageId', async (request, reply) => {
     const input = z.object({ status: z.enum(['applied', 'conflict', 'reverted']) }).safeParse(request.body);
@@ -55,7 +57,7 @@ export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthSer
     db.update(aiMessages).set(input.data).where(eq(aiMessages.id, row.id)).run(); return { ok: true };
   });
   app.post<{ Params: { pageId: string } }>('/api/pages/:pageId/ai/turn', { bodyLimit: 18 * 1024 * 1024 }, async (request, reply) => {
-    const input = z.object({ prompt: z.string().trim().min(1).max(6000), image: z.string().min(1).max(8500000).optional(), selectedIds: z.array(z.string()).max(200), dialogId: z.string().optional(), baseDocument: documentSchema }).safeParse(request.body);
+    const input = z.object({ prompt: z.string().trim().min(1).max(6000), conversationId: z.string().nullable().optional(), image: z.string().min(1).max(8500000).optional(), selectedIds: z.array(z.string()).max(200), dialogId: z.string().optional(), baseDocument: documentSchema }).safeParse(request.body);
     if (!input.success) return reply.code(400).send({ message: '输入或原型数据不正确' });
     let image: ReturnType<typeof parseScreenshot> | undefined;
     try { if (input.data.image) image = parseScreenshot(input.data.image); }
@@ -67,12 +69,16 @@ export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthSer
     if (canonicalDocument(doc.content) !== canonicalDocument(input.data.baseDocument)) return reply.code(409).send({ message: '页面内容已变化，请保存后重新发送。' });
     if (active.has(pageId)) return reply.code(409).send({ message: '此页面已有 AI 正在处理，请稍后重试。' });
     if (input.data.dialogId && !doc.content.dialogs?.some(d => d.id === input.data.dialogId)) return reply.code(400).send({ message: '弹窗不存在' });
+    let conversation = conversations.current(pageId);
+    if (input.data.conversationId !== undefined && input.data.conversationId !== (conversation?.id || null)) return reply.code(409).send({ message: '当前对话已变化，请刷新对话后重试。' });
+    conversation ||= conversations.create(pageId);
+    if (!history(pageId).length) db.update(aiConversations).set({ title: input.data.prompt.slice(0, 40) }).where(eq(aiConversations.id, conversation.id)).run();
     const controller = new AbortController(); active.set(pageId, controller);
     const past = history(pageId).filter(m => m.status !== 'running').slice(-12).map(m => ({ role: m.role, content: m.content, outcome: m.status }));
     const now = Date.now(); const messageId = crypto.randomUUID();
     db.transaction(tx => {
-      tx.insert(aiMessages).values({ id: crypto.randomUUID(), pageId, role: 'user', content: input.data.prompt + (image ? '\n[附图，仅供本轮参考]' : ''), status: 'done', provider: '', createdAt: now }).run();
-      tx.insert(aiMessages).values({ id: messageId, pageId, role: 'assistant', content: '', status: 'running', provider: '', createdAt: now + 1 }).run();
+      tx.insert(aiMessages).values({ id: crypto.randomUUID(), pageId, conversationId: conversation.id, role: 'user', content: input.data.prompt + (image ? '\n[附图，仅供本轮参考]' : ''), status: 'done', provider: '', createdAt: now }).run();
+      tx.insert(aiMessages).values({ id: messageId, pageId, conversationId: conversation.id, role: 'assistant', content: '', status: 'running', provider: '', createdAt: now + 1 }).run();
     });
     reply.hijack(); reply.raw.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
     const send = (event: AiEvent) => { if (!reply.raw.destroyed) reply.raw.write(JSON.stringify(event) + '\n'); };

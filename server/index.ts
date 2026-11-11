@@ -11,7 +11,7 @@ import { registerAuth } from './auth.js';
 
 loadEnvironment();
 
-const app = Fastify({ logger: true, bodyLimit: 10 * 1024 * 1024 });
+const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 10 * 1024 * 1024 });
 const database = openDatabase();
 const repository = createRepository(database.db);
 repository.initialize();
