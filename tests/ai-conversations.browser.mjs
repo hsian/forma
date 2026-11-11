@@ -22,6 +22,51 @@ async function send(text) {
 try {
   await page.goto(`${process.env.TEST_URL}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
   await page.keyboard.press('Control+Shift+Backquote'); await button('展开 AI 对话记录').click();
+  const panel = page.locator('.ai-panel');
+  const beforeDrag = await panel.boundingBox();
+  const header = await page.locator('.ai-drag-handle').boundingBox();
+  await page.mouse.move(header.x + 45, header.y + 18);
+  await page.mouse.down(); await page.mouse.move(header.x - 45, header.y - 142, { steps: 10 }); await page.mouse.up();
+  const moved = await panel.boundingBox();
+  assert.ok(Math.abs(moved.x - beforeDrag.x + 90) < 2);
+  assert.ok(Math.abs(moved.y - beforeDrag.y + 160) < 2);
+  await button('收起 AI 对话记录').click(); await button('展开 AI 对话记录').click();
+  assert.ok(Math.abs((await panel.boundingBox()).y - moved.y) < 2, 'collapse retains dragged position');
+  await page.keyboard.press('Control+Backquote'); await page.keyboard.press('Control+Backquote');
+  assert.ok(Math.abs((await panel.boundingBox()).x - moved.x) < 2, 'hide retains dragged position');
+  const handle = await page.locator('.ai-drag-handle').boundingBox();
+  await page.mouse.move(handle.x + 45, handle.y + 18); await page.mouse.down();
+  await page.mouse.move(2, 2, { steps: 10 }); await page.mouse.up();
+  await page.setViewportSize({ width: 1100, height: 760 });
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('.ai-panel'), parent = panel.offsetParent;
+    const a = panel.getBoundingClientRect(), b = parent.getBoundingClientRect();
+    return a.left >= b.left && a.top >= b.top && a.right <= b.right + 1 && a.bottom <= b.bottom + 1;
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.screenshot({ path: 'test-results/ai-panel-drag.png', fullPage: true });
+  async function resizeBy(dx, dy) {
+    const grip = await page.locator('.ai-resize-se').boundingBox();
+    await page.mouse.move(grip.x + 8, grip.y + 8); await page.mouse.down();
+    await page.mouse.move(grip.x + 8 + dx, grip.y + 8 + dy, { steps: 10 }); await page.mouse.up();
+  }
+  const initialSize = await panel.boundingBox();
+  await resizeBy(160, 100);
+  const enlarged = await panel.boundingBox();
+  assert.ok(enlarged.width > initialSize.width + 150 && enlarged.height > initialSize.height + 90);
+  await resizeBy(-600, -600);
+  const minimum = await panel.boundingBox();
+  assert.ok(Math.abs(minimum.width - 480) < 2 && Math.abs(minimum.height - 280) < 2);
+  assert.ok(await page.locator('.ai-input-row').evaluate(element => element.scrollWidth <= element.clientWidth), 'input controls fit at minimum width');
+  const beforeCollapse = await panel.boundingBox();
+  await button('收起 AI 对话记录').click();
+  assert.ok((await panel.boundingBox()).height < 100);
+  await button('展开 AI 对话记录').click();
+  assert.ok(Math.abs((await panel.boundingBox()).height - beforeCollapse.height) < 2);
+  await resizeBy(160, 100);
+  await page.screenshot({ path: 'test-results/ai-panel-resize.png', fullPage: true });
+  await page.keyboard.press('Control+Backquote'); await panel.waitFor({ state: 'hidden' });
+  await page.keyboard.press('Control+Backquote'); await panel.waitFor();
   await send('只讨论：第一段需求');
   const first = await state(); assert.equal(first.messages.length, 2);
   const original = await (await page.request.get(`${process.env.TEST_URL}/api/pages/default-page/document`)).json();

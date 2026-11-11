@@ -1,4 +1,5 @@
 import { AiConversationMenu } from './AiConversationMenu';
+import { useDraggableAiPanel } from './useDraggableAiPanel';
 import { randomId } from '../shared/uuid';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Input, Tooltip } from 'antd';
@@ -15,6 +16,7 @@ const labels: Record<string, string> = { running: '处理中', applied: '已应�
 export function AiPanel({ session, dialogId, visible = true }: { session: DocumentSession; dialogId?: string; visible?: boolean }) {
   const { doc, selected } = useEditor();
   const [open, setOpen] = useState(false);
+  const floating = useDraggableAiPanel(visible, open);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => preference(`forma:ai-draft:${session.currentPageId}`, ''));
@@ -114,13 +116,14 @@ export function AiPanel({ session, dialogId, visible = true }: { session: Docume
   const latest = messages.at(-1);
   const errorInHistory = latest?.role === 'assistant' && latest.content === error && latest.status === 'error';
   const notice = error || (busy ? status || 'AI 正在处理' : latest?.role === 'assistant' ? `${labels[latest.status] ? labels[latest.status] + ' · ' : ''}${latest.content}` : '');
-  return <section id="ai-assistant-panel" className={`ai-panel ${open ? 'history-open' : ''}`} aria-label="AI 助手" aria-busy={busy || loading || attachment.reading} aria-keyshortcuts="Control+`" hidden={!visible}>
+  return <section ref={floating.ref} style={floating.style} id="ai-assistant-panel" className={`ai-panel ${open ? 'history-open' : ''} ${floating.dragging ? 'is-dragging' : ''} ${floating.sized ? 'is-resized' : ''} ${floating.resizing ? 'is-resizing' : ''}`} aria-label="AI 助手" aria-busy={busy || loading || attachment.reading} aria-keyshortcuts="Control+`" hidden={!visible}>
     <div className="ai-history" id="ai-panel-history" hidden={!open}>
-      <div className="ai-history-header"><strong>AI 对话</strong><span title={scope}>{scope}</span><AiConversationMenu key={pageId} session={session} disabled={busy || loading} currentId={conversationId} onWorking={setManaging} onChanged={async reset => { await loadMessages(); if (reset) { setError(''); setLive(''); setStatus(''); setDraft(''); attachment.clear(); } }}/><Button type="text" size="small" aria-label="收起 AI 对话记录" title="收起对话记录" icon={<MinusOutlined/>} onClick={() => setOpen(false)}/></div>
+      <div className="ai-history-header ai-drag-handle" title="按住顶部栏拖动窗口" {...floating.handle}><strong>AI 对话</strong><span title={scope}>{scope}</span><AiConversationMenu key={pageId} session={session} disabled={busy || loading} currentId={conversationId} onWorking={setManaging} onChanged={async reset => { await loadMessages(); if (reset) { setError(''); setLive(''); setStatus(''); setDraft(''); attachment.clear(); } }}/><Button type="text" size="small" aria-label="收起 AI 对话记录" title="收起对话记录" icon={<MinusOutlined/>} onClick={() => setOpen(false)}/></div>
       <div className="ai-messages" ref={log} role="log" aria-label="AI 对话记录" aria-live="polite">{!messages.length && !busy && <div className="ai-welcome">描述想修改的内容，对话记录会显示在这里。</div>}{messages.map(message => <div key={message.id} className={`ai-message ${message.role}`}><div className="ai-message-heading">{message.role === 'user' ? '你' : 'AI 助手'}<span>{labels[message.status] || ''}</span></div><div className="ai-message-text" role={message.status === 'error' ? 'alert' : undefined}>{message.content || '处理已中断，可重新发送。'}</div></div>)}{busy && <div className="ai-live"><span className="ai-working-dot"/>{live || status || '正在处理'}</div>}{error && !errorInHistory && <div className="ai-error" role="alert">{error}</div>}</div>
     </div>
     <div className="ai-composer">{attachment.preview}<div className="ai-input-row"><Tooltip title={scope}><span className="ai-input-mark" aria-label={scope}><RobotOutlined/></span></Tooltip><Input.TextArea onPaste={attachment.onPaste} aria-label="AI 修改要求" placeholder={selected.length ? `修改选中的${selected.length}个元素…` : '描述你想修改的原型…'} value={draft} autoSize={{ minRows: 1, maxRows: 3 }} maxLength={6000} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}/><Tooltip title={open ? '收起对话记录' : '查看对话记录'}><Button type="text" aria-label={open ? '折叠 AI 对话记录' : '展开 AI 对话记录'} aria-expanded={open} aria-controls="ai-panel-history" icon={<CommentOutlined/>} onClick={() => setOpen(value => !value)}/></Tooltip>{busy ? <Tooltip title="停止生成"><Button aria-label="停止 AI 生成" icon={<StopOutlined/>} onClick={() => { controller.current?.abort(); }}/></Tooltip> : <Tooltip title="发送 · Enter（Shift+Enter 换行）"><Button type="primary" aria-label="发送 AI 修改要求" disabled={(!draft.trim() && !attachment.image) || attachment.reading || loading || managing || session.server !== 'ready' || !session.canEdit} icon={<SendOutlined/>} onClick={() => { void submit(); }}/></Tooltip>}</div>
       {notice && !open && <div className={`ai-inline-notice ${error ? 'is-error' : ''}`} role={error ? 'alert' : 'status'} aria-live="polite"><button title={notice} onClick={() => setOpen(true)}>{busy && <span className="ai-working-dot"/>}<span>{notice}</span></button></div>}
     </div>
+    {open && <>{(['e', 's', 'se'] as const).map(direction => <div key={direction} className={`ai-resize-handle ai-resize-${direction}`} aria-label={direction === 'e' ? '调整聊天宽度' : direction === 's' ? '调整聊天高度' : '调整聊天大小'} title="拖动调整大小，最小 480 × 280" {...floating.resizeHandle(direction)}/>)}</>}
   </section>;
 }
