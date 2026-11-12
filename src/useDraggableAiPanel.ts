@@ -5,7 +5,12 @@ type Size = { width: number; height: number };
 export function useDraggableAiPanel(visible: boolean, expanded: boolean) {
   const ref = useRef<HTMLElement>(null);
   const drag = useRef<{ pointerId: number; x: number; y: number; start: Position } | null>(null);
+  // y is the distance from the parent's bottom: toggling history preserves this anchor.
   const [position, setPosition] = useState<Position | null>(null);
+  function setTopPosition(value: Position, height = ref.current?.offsetHeight || 0) {
+    const parent = ref.current?.offsetParent;
+    if (parent instanceof HTMLElement) setPosition({ x: value.x, y: parent.clientHeight - value.y - height });
+  }
   const [dragging, setDragging] = useState(false);
   const [size, setSize] = useState<Size | null>(null);
   const [resizing, setResizing] = useState(false);
@@ -31,13 +36,13 @@ export function useDraggableAiPanel(visible: boolean, expanded: boolean) {
       });
       setPosition(old => {
         if (!old) return old;
-        const next = clamp(old);
+        const next = { x: Math.max(8, Math.min(old.x, parent.clientWidth - panel.offsetWidth - 8)), y: Math.max(8, Math.min(old.y, parent.clientHeight - 62)) };
         return next.x === old.x && next.y === old.y ? old : next;
       });
     });
     observer.observe(panel); observer.observe(parent);
     return () => observer.disconnect();
-  }, [visible]);
+  }, [visible, expanded]);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !event.isPrimary || !event.currentTarget.contains(event.target as Node) || (event.target as Element).closest('button,a,input,[role="button"]')) return;
@@ -46,14 +51,14 @@ export function useDraggableAiPanel(visible: boolean, expanded: boolean) {
     const rect = panel.getBoundingClientRect(), bounds = parent.getBoundingClientRect();
     const start = { x: rect.left - bounds.left - parent.clientLeft + parent.scrollLeft, y: rect.top - bounds.top - parent.clientTop + parent.scrollTop };
     drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start };
-    setPosition(start); setDragging(true);
+    setTopPosition(start); setDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault(); event.stopPropagation();
   }
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
     const start = drag.current;
     if (!start || event.pointerId !== start.pointerId) return;
-    setPosition(clamp({ x: start.start.x + event.clientX - start.x, y: start.start.y + event.clientY - start.y }));
+    setTopPosition(clamp({ x: start.start.x + event.clientX - start.x, y: start.start.y + event.clientY - start.y }));
     event.preventDefault(); event.stopPropagation();
   }
   function end(event: PointerEvent<HTMLDivElement>) {
@@ -68,7 +73,7 @@ export function useDraggableAiPanel(visible: boolean, expanded: boolean) {
     const rect = panel.getBoundingClientRect(), bounds = parent.getBoundingClientRect();
     const start = { x: rect.left - bounds.left - parent.clientLeft + parent.scrollLeft, y: rect.top - bounds.top - parent.clientTop + parent.scrollTop };
     resize.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, start, size: { width: rect.width, height: rect.height }, direction };
-    setPosition(start); setSize({ width: rect.width, height: rect.height }); setResizing(true);
+    setTopPosition(start); setSize({ width: rect.width, height: rect.height }); setResizing(true);
     event.currentTarget.setPointerCapture(event.pointerId);
     event.preventDefault(); event.stopPropagation();
   }
@@ -82,7 +87,7 @@ export function useDraggableAiPanel(visible: boolean, expanded: boolean) {
     if (start.direction.includes('e')) right = Math.min(parent.clientWidth - 8, Math.max(left + minWidth, right + dx));
     if (start.direction.includes('n')) top = Math.max(8, Math.min(bottom - minHeight, top + dy));
     if (start.direction.includes('s')) bottom = Math.min(parent.clientHeight - 8, Math.max(top + minHeight, bottom + dy));
-    setPosition({ x: left, y: top });
+    setTopPosition({ x: left, y: top }, bottom - top);
     setSize({ width: right - left, height: bottom - top });
     event.preventDefault(); event.stopPropagation();
   }
@@ -93,7 +98,7 @@ export function useDraggableAiPanel(visible: boolean, expanded: boolean) {
   }
   return {
     ref, dragging, resizing, sized: !!size && expanded,
-    style: { ...(position ? { left: position.x, top: position.y, bottom: 'auto', transform: 'none' } : {}), ...(size ? { width: size.width, ...(expanded ? { height: size.height } : {}) } : {}) },
+    style: { ...(position ? { left: position.x, top: 'auto', bottom: position.y, maxHeight: `calc(100% - ${position.y + 8}px)`, transform: 'none' } : {}), ...(size ? { width: size.width, ...(expanded ? { height: size.height } : {}) } : {}) },
     handle: { onPointerDown, onPointerMove, onPointerUp: end, onPointerCancel: end, onLostPointerCapture: end },
     resizeHandle: (direction: string) => ({ onPointerDown: (event: PointerEvent<HTMLDivElement>) => resizeStart(event, direction), onPointerMove: resizeMove, onPointerUp: resizeEnd, onPointerCancel: resizeEnd, onLostPointerCapture: resizeEnd }),
   };

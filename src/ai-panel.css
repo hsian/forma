@@ -41,3 +41,7 @@
 .ai-drag-handle{cursor:grab;touch-action:none;user-select:none}.ai-panel.is-dragging .ai-drag-handle{cursor:grabbing}.ai-panel.is-dragging{user-select:none}.ai-drag-handle button{touch-action:manipulation}
 
 .ai-panel.is-resized:not([hidden]){display:flex;flex-direction:column}.ai-panel.is-resized .ai-history{flex:1;min-height:100px;height:auto}.ai-panel.is-resized .ai-composer{flex-shrink:0;max-height:55%;overflow:auto}.ai-panel.is-resizing{user-select:none}.ai-resize-handle{position:absolute;z-index:2;touch-action:none}.ai-resize-e,.ai-resize-w{top:12px;bottom:12px;width:6px;cursor:ew-resize}.ai-resize-e{right:0}.ai-resize-w{left:0}.ai-resize-n,.ai-resize-s{left:12px;right:12px;height:6px;cursor:ns-resize}.ai-resize-n{top:0}.ai-resize-s{bottom:0}.ai-resize-ne,.ai-resize-nw,.ai-resize-se,.ai-resize-sw{width:12px;height:12px}.ai-resize-nw{left:0;top:0;cursor:nwse-resize}.ai-resize-ne{right:0;top:0;cursor:nesw-resize}.ai-resize-sw{left:0;bottom:0;cursor:nesw-resize}.ai-resize-se{right:0;bottom:0;cursor:nwse-resize}
+
+.ai-input-mark.ai-drag-handle{display:grid}
+
+.ai-panel.history-open:not([hidden]){display:flex;flex-direction:column}.ai-panel.history-open .ai-history{flex-shrink:1;min-height:40px}.ai-panel.history-open .ai-composer{flex-shrink:0}

@@ -21,20 +21,44 @@ async function send(text) {
 }
 try {
   await page.goto(`${process.env.TEST_URL}/design`); await page.locator('.studio[data-server-state="ready"]').waitFor();
-  await page.keyboard.press('Control+Shift+Backquote'); await button('展开 AI 对话记录').click();
+  await page.keyboard.press('Control+Shift+Backquote');
   const panel = page.locator('.ai-panel');
+  const icon = await page.getByLabel('拖动 AI 对话窗口', { exact: true }).boundingBox();
+  await page.mouse.move(icon.x + 14, icon.y + 17); await page.mouse.down();
+  await page.mouse.move(icon.x - 16, icon.y - 3, { steps: 5 }); await page.mouse.up();
+  const originalCollapsed = await panel.boundingBox();
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await button('展开 AI 对话记录').click();
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('.ai-panel'), parent = panel.offsetParent;
+      return panel.getBoundingClientRect().bottom <= parent.getBoundingClientRect().bottom;
+    });
+    const opened = await panel.boundingBox();
+    assert.ok(Math.abs(opened.y + opened.height - originalCollapsed.y - originalCollapsed.height) < 2 && Math.abs(opened.x - originalCollapsed.x) < 2, 'expansion keeps the same bottom and horizontal position');
+    await button('收起 AI 对话记录').click();
+    const restored = await panel.boundingBox();
+    assert.ok(Math.abs(restored.y - originalCollapsed.y) < 2 && Math.abs(restored.x - originalCollapsed.x) < 2, 'collapse restores original lower position without drift');
+  }
+  await button('展开 AI 对话记录').click();
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('.ai-panel'), parent = panel.offsetParent;
+    return panel.getBoundingClientRect().bottom <= parent.getBoundingClientRect().bottom;
+  });
   const beforeDrag = await panel.boundingBox();
-  const header = await page.locator('.ai-drag-handle').boundingBox();
+  const header = await page.locator('.ai-history-header.ai-drag-handle').boundingBox();
   await page.mouse.move(header.x + 45, header.y + 18);
   await page.mouse.down(); await page.mouse.move(header.x - 45, header.y - 142, { steps: 10 }); await page.mouse.up();
   const moved = await panel.boundingBox();
   assert.ok(Math.abs(moved.x - beforeDrag.x + 90) < 2);
   assert.ok(Math.abs(moved.y - beforeDrag.y + 160) < 2);
-  await button('收起 AI 对话记录').click(); await button('展开 AI 对话记录').click();
+  await button('收起 AI 对话记录').click();
+  const collapsedAfterDrag = await panel.boundingBox();
+  assert.ok(Math.abs(collapsedAfterDrag.y + collapsedAfterDrag.height - moved.y - moved.height) < 2 && Math.abs(collapsedAfterDrag.x - moved.x) < 2, 'collapse after dragging keeps the shared bottom anchor');
+  await button('展开 AI 对话记录').click();
   assert.ok(Math.abs((await panel.boundingBox()).y - moved.y) < 2, 'collapse retains dragged position');
   await page.keyboard.press('Control+Backquote'); await page.keyboard.press('Control+Backquote');
   assert.ok(Math.abs((await panel.boundingBox()).x - moved.x) < 2, 'hide retains dragged position');
-  const handle = await page.locator('.ai-drag-handle').boundingBox();
+  const handle = await page.locator('.ai-history-header.ai-drag-handle').boundingBox();
   await page.mouse.move(handle.x + 45, handle.y + 18); await page.mouse.down();
   await page.mouse.move(2, 2, { steps: 10 }); await page.mouse.up();
   await page.setViewportSize({ width: 1100, height: 760 });
@@ -61,6 +85,14 @@ try {
   const beforeCollapse = await panel.boundingBox();
   await button('收起 AI 对话记录').click();
   assert.ok((await panel.boundingBox()).height < 100);
+  const collapsed = await panel.boundingBox();
+  const leftHandle = await page.getByLabel('拖动 AI 对话窗口', { exact: true }).boundingBox();
+  await page.mouse.move(leftHandle.x + 14, leftHandle.y + 17); await page.mouse.down();
+  await page.mouse.move(leftHandle.x + 34, leftHandle.y + 47, { steps: 5 }); await page.mouse.up();
+  const movedCollapsed = await panel.boundingBox();
+  assert.ok(Math.abs(movedCollapsed.x - collapsed.x - 20) < 2 && Math.abs(movedCollapsed.y - collapsed.y - 30) < 2, 'left icon drags collapsed panel');
+  assert.equal(await page.locator('.ai-history').isVisible(), false);
+
   await button('展开 AI 对话记录').click();
   assert.ok(Math.abs((await panel.boundingBox()).height - beforeCollapse.height) < 2);
   await resizeBy(160, 100);
