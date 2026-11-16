@@ -1,7 +1,7 @@
 import { RichText } from './RichText';
 import { DrawingView } from './DrawingView';
 import { roundedRectanglePath, vectorRectangleRadii } from '../shared/vector';
-import { Button, Input, Select, Switch, Table, Tag } from 'antd';
+import { Button, ConfigProvider, Input, Select, Switch, Table, Tag } from 'antd';
 import { getSelectConfig, type PrototypeElement, type TableRowAction } from '../shared/model';
 import { tableRows, tableColumns, rowActions, rowText, type RuntimeValue, type RuntimeValues } from '../shared/runtime';
 import { ChoiceView } from './ChoiceView';
@@ -80,5 +80,19 @@ function ElementBody({ element: e, preview = false, activate, value, onChange, v
 export function ElementView(props:Parameters<typeof ElementBody>[0]) {
  let node=<ElementBody {...props}/>;
  for(const [index,path] of (props.element.clipPaths||[]).entries())node=<div key={index} style={{width:'100%',height:'100%',clipPath:`path(${props.element.clipRules?.[index]||'nonzero'}, "${path}")`}}>{node}</div>;
- return node;
+ const color = props.element.color;
+ const config = componentConfig(props.element.kind, props.element.component);
+ const selectedColor = typeof config.selectedColor === 'string' ? config.selectedColor : color;
+ const unselectedColor = typeof config.unselectedColor === 'string' ? config.unselectedColor : color;
+ const indicatorColor = typeof config.indicatorColor === 'string' ? config.indicatorColor : selectedColor;
+ return <ConfigProvider theme={{
+   token: { colorText: color, fontSize: Math.max(12, props.element.fontSize) },
+   components: {
+     Tabs: { itemColor: unselectedColor, itemSelectedColor: selectedColor, itemHoverColor: selectedColor, itemActiveColor: selectedColor, inkBarColor: indicatorColor },
+     Tree: { nodeSelectedColor: selectedColor,
+       ...(typeof config.selectedBackground === 'string' ? { nodeSelectedBg: config.selectedBackground } : {}),
+       ...(typeof config.hoverBackground === 'string' ? { nodeHoverBg: config.hoverBackground } : {}),
+     },
+   },
+ }}>{node}</ConfigProvider>;
 }

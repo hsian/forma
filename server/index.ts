@@ -40,4 +40,11 @@ if (isProduction()) {
   app.addHook('onClose', async () => { await vite.close(); });
 }
 await app.listen({ port: Number(process.env.PORT || 6060), host: process.env.HOST || '127.0.0.1' });
+const address = app.server.address();
+if (address && typeof address !== 'string') {
+  const host = ['0.0.0.0', '::'].includes(address.address) ? '127.0.0.1' : address.address;
+  const urlHost = host.includes(':') ? `[${host}]` : host;
+  console.log(`\nForma 已启动： http://${urlHost}:${address.port}`);
+  console.log('在浏览器中打开以上地址。停止服务请按 Ctrl+C。\n');
+}
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => { void app.close(); });

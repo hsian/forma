@@ -1,9 +1,14 @@
 // 仅供隔离测试通过 FORMA_*_CLI 指定；产品运行时不加载此文件。
 import { writeFileSync } from 'node:fs';
+import { answerIntent } from './fake-intent.mjs';
 let input = '';
 for await (const chunk of process.stdin) input += chunk;
 const context = JSON.parse(input.split('上下文JSON：\n').at(-1).split('\n\n校验修正请求：\n')[0]);
 const codex = process.argv.includes('exec');
+if (context.message.includes('MODEL_UNAVAILABLE')) {
+  process.stdout.write(JSON.stringify({ type: 'turn.failed', error: { code: 'model_not_found', message: 'The model is not supported when using Codex with a ChatGPT account.' } }) + '\n');
+  process.exit(1);
+}
 if (context.message.includes('AUTH')) {
   // Split stderr across writes and keep the process alive, like a CLI retrying authentication.
   process.stderr.write('invalid_refresh_');
@@ -15,6 +20,7 @@ if (context.message.includes('QUOTA') && codex) { process.stderr.write('usage_li
 if (context.message.includes('429')) { process.stderr.write('429 Too Many Requests'); process.exit(1); }
 if (context.message.includes('延迟') || context.message.includes('停止测试')) await new Promise(resolve => setTimeout(resolve, context.message.includes('停止测试') ? 10000 : 1200));
 const id = context.selectedIds[0] || 'query';
+answerIntent(context);
 const result = { reply: '已生成按钮颜色调整，可以在画布中查看。', operations: [{ type: 'updateElement', targetId: id, kind: '', properties: JSON.stringify({ fill: '#1677ff' }) }] };
 if (context.message.includes('只讨论')) { result.reply = '可以调整按钮颜色，目前没有修改页面。'; result.operations = []; }
 if (context.message.includes('历史计数测试')) { result.reply = `历史消息数：${context.history.length}`; result.operations = []; }

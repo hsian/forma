@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { classifyIntent, intentReply } from './intent.js';
 import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AppDatabase } from '../db/index.js';
@@ -51,9 +52,12 @@ export function registerDesignAi(app: FastifyInstance, db: AppDatabase, auth?: A
     const heartbeat=setInterval(()=>send({type:'status',text:'正在分析设计稿，可以随时停止'}),15000);
     try {
       const selectedIds=input.data.selectedIds.filter(id=>source.content.elements.some(element=>element.id===id));
+      send({type:'status',text:'正在识别请求'});
+      const decision=await classifyIntent({mode:'design',message:input.data.prompt,document:source.content,selectedIds,history:past},controller.signal,text=>send({type:'status',text}),image);
+      const immediateReply=intentReply(decision.intent,'design');
       const prompt=system+'\n\n上下文JSON：\n'+JSON.stringify({scope:'design-analysis',referenceImage:image?{width:image.width,height:image.height}:undefined,page:{id:pageId,name:page.name},design:{id:designId,name:source.name},selectedIds,
         measurement:inspectDesign(source.content,selectedIds),document:{...source.content,importInfo:undefined},history:past,message:input.data.prompt});
-      const result=await generate(prompt,controller.signal,text=>send({type:'status',text}),text=>send({type:'text',text}),image,{type:'object',additionalProperties:false,required:['reply'],properties:{reply:{type:'string'}}});
+      const result=immediateReply ? {provider:decision.provider,raw:JSON.stringify({reply:immediateReply})} : await generate(prompt,controller.signal,text=>send({type:'status',text}),text=>send({type:'text',text}),image,{type:'object',additionalProperties:false,required:['reply'],properties:{reply:{type:'string'}}});
       controller.signal.throwIfAborted();
       const value=z.object({reply:z.string().min(1).max(20000)}).strict().parse(JSON.parse(result.raw.trim().replace(/^```(?:json)?\s*|\s*```$/g,'')));
       if(auth && !auth.role(request.identity!.user,page.projectId))throw Error('项目访问权限已变化，请刷新后重试');

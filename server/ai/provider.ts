@@ -37,8 +37,9 @@ export function stopProcess(child: ChildProcess) {
     killer.on('error', () => child.kill());
   } else child.kill('SIGTERM');
 }
-class ModelError extends Error { constructor(public kind: 'quota' | 'failed' | 'timeout' | 'missing' | 'cancelled' | 'authentication', public provider?: Provider) { super(kind); } }
+class ModelError extends Error { constructor(public kind: 'quota' | 'failed' | 'timeout' | 'missing' | 'cancelled' | 'authentication' | 'model', public provider?: Provider) { super(kind); } }
 const authenticationFailed = (text: string) => /invalid_refresh_token|refresh_token_reused|refresh_token_expired|access token could not be refreshed|authentication token[^\n]*try signing in again|not logged in[^\n]*login/i.test(text);
+const modelUnavailable = (text: string) => /model_not_found|model[^\n]*not supported[^\n]*account/i.test(text);
 const quota = (text: string) => /usage_limit_reached|insufficient_quota|quota_exceeded|you(?:'ve| have) (?:hit|reached) your usage limit|credits? (?:exhausted|depleted)|额度(?:已)?(?:耗尽|用完|不足)/i.test(text);
 export function parseCliEvent(record: Record<string, any>) {
   if (record.type === 'item.completed' && record.item?.type === 'error') return { error: String(record.item.message || '') };
@@ -106,6 +107,7 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
           if (parsed.error) {
             error = parsed.error;
             if (authenticationFailed(error)) { finish(new ModelError('authentication', provider)); return; }
+            if (modelUnavailable(error)) { finish(new ModelError('model', provider)); return; }
             if (JSON.parse(text).type === 'turn.failed') { finish(new ModelError(quota(error) ? 'quota' : 'failed', provider)); return; }
           }
           if (parsed.delta) output += parsed.delta;
@@ -125,6 +127,7 @@ async function invoke(provider: Provider, prompt: string, signal: AbortSignal, o
         if (settled) return;
         error = (error + chunk).slice(-6000);
         if (authenticationFailed(error)) finish(new ModelError('authentication', provider));
+        else if (modelUnavailable(error)) finish(new ModelError('model', provider));
       });
       child.on('error', () => finish(new ModelError('failed')));
       child.stdin.on('error', () => {});
@@ -153,6 +156,7 @@ export async function generate(prompt: string, signal: AbortSignal, onStatus: (t
 export function friendlyError(error: unknown) {
   if (error instanceof ModelError) return {
     authentication: 'AI 服务认证失败，请联系管理员检查 API 地址和密钥或登录状态。本轮未修改原型。',
+    model: '当前 AI 模型不存在或当前账号无权使用，请管理员检查 FORMA_CODEX_MODEL / FORMA_CLAUDE_MODEL 和 CLI 默认模型配置。本轮未修改原型。',
     missing: 'AI 服务尚未配置，请联系管理员。',
     timeout: '响应超时，请重试。',
     cancelled: '已停止，本轮没有修改原型。',

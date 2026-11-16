@@ -1,6 +1,7 @@
 // Isolated tests only: require actual image bytes on both CLI transports.
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { answerIntent } from './fake-intent.mjs';
 let input = ''; for await (const chunk of process.stdin) input += chunk;
 const codex = process.argv.includes('exec');
 let bytes;
@@ -20,6 +21,7 @@ assert.equal(context.referenceImage.width, bytes.readUInt32BE(16));
 if (context.message.includes('QUOTA') && codex) { process.stderr.write('usage_limit_reached'); process.exit(1); }
 if (context.message.includes('FAIL')) { process.stderr.write('test failure'); process.exit(1); }
 if (context.message.includes('STOP')) await new Promise(resolve => setTimeout(resolve, 10000));
+answerIntent(context);
 const result = { reply: '已读取参考图片，可以结合当前页面讨论。', ...(context.scope === 'design-analysis' ? {} : { operations: [] }) };
 if (context.message.includes('修正验证')) result.operations = [{ type: 'updateElement', targetId: 'query', kind: '', properties: JSON.stringify({ fill: input.includes('校验修正请求：') ? '#1677ff' : 'red' }) }];
 const raw = JSON.stringify(result);

@@ -93,6 +93,9 @@ try {
   await send('只讨论：这个按钮怎么改'); await finished();
   await page.locator('.ai-inline-notice').getByText('可以调整按钮颜色，目前没有修改页面。', { exact: true }).waitFor();
   assert.deepEqual(await document(), original);
+  await send('明天天气怎么样'); await finished();
+  await page.locator('.ai-inline-notice').getByText('我只能帮助编辑原型和分析设计稿。请描述要调整的页面、组件，或相关设计问题。', { exact: true }).waitFor();
+  assert.deepEqual(await document(), original, '无关闲聊不修改原型');
   await send('不合法的字号修改'); await finished();
   await page.getByRole('alert').filter({ hasText: '文字字号不能小于' }).waitFor();
   assert.deepEqual(await document(), original);

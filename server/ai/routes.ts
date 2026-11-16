@@ -1,4 +1,5 @@
 import { registerConversations } from './conversations.js';
+import { classifyIntent, intentReply } from './intent.js';
 import type { FastifyInstance } from 'fastify';
 import { registerDesignAi } from './design-routes.js';
 import { and, eq } from 'drizzle-orm';
@@ -30,6 +31,8 @@ type=updatePage: targetId="",kind=""，properties 仅含 width,height,background
 表格通用行操作配置 table.rowActions=[{id,label,action:"modal"或"toast",modalId?,message?}]，可配置多个按钮，各自打开不同弹窗或显示消息。新配置请使用 rowActions；rowActionText/rowMessage 只兼容旧文档。打开弹窗自动传递当前行数据，不需要额外参数。弹窗标题、文字、消息可使用 {{row.字段名}} 引用当前行，属于纯文本模板，不能写表达式。
 弹窗 input/select 元素可设置 rowField="字段名"，自动回填当前行；select 使用选项 id，多选值以逗号分隔。弹窗按钮 action="updateRow" 校验表单、将绑定字段写回当前模拟行并关闭；action="deleteRow" 删除当前模拟行并关闭；action="submit" 校验关闭并显示 actionText；action="closeModal" 取消关闭不修改数据。更新、删除只影响本次预览，不修改原型文档。需要前置确认时，添加行操作目标弹窗、说明文字和取消/确认按钮，确认后动作由需求决定，不要因旧能力说明拒绝配置。
 按钮 action=none/modal/toast/toggle/closeModal/submit/filter/reset/apply/updateRow/deleteRow，modalId 指向弹窗，targetId 指向目标元素，actionText 为提示。filter/reset 指向表格；apply 用于应用弹窗中的选项并关闭。条件 visibleWhen={sourceId,value}。
+页签 tabs 支持 component.selectedColor（选中文字）、component.unselectedColor（未选中文字）、component.indicatorColor（选中下划线），均为6位HEX。需要选中蓝色、未选中黑色时设置这两个独立状态颜色，不要只改通用 color。未设置的文字状态颜色沿用元素 color，下划线未设置时沿用选中文字颜色。默认选中项通过 choices.defaultValues 指定已有选项 id，不改变文字颜色。
+树 tree 支持 component.selectedBackground（选中节点的高亮背景）、component.selectedColor（选中节点文字）、component.hoverBackground（悬停节点背景），均为6位HEX。选中背景不是元素通用 fill，修改高亮背景时设置 selectedBackground，保留普通背景和节点数据。
 表格列与复选框联动时选项id必须等于列key。删除元素要在同一批操作修复所有引用。不生成 JS、HTML、函数或未支持的组件。
 Ant Design 组件通过 component 对象设置专属属性，updateElement.component 只写变化的键，其他键会保留。条目 items 数组整体替换，每项是 {id,label,description?,parentId?,disabled?}；parentId 引用同一 items 内的上级，不可循环。option 类型的默认选中项填写 items 中的 id，或空字符串表示不预选；修改 items 时同步修正失效的默认值。不添加函数、事件代码或任意 antd props。组件可用字段（未提供时使用组件默认值）：
 ${JSON.stringify(antdKinds.map(kind => ({ kind, name: antdCatalog[kind].component, fields: Object.fromEntries(antdCatalog[kind].fields.map(field => [field.key, field.type === 'select' ? field.options!.map(option => option.value) : field.type === 'number' ? ['number', field.min, field.max] : field.type])) })))}
@@ -85,12 +88,18 @@ export function registerAi(app: FastifyInstance, db: AppDatabase, auth?: AuthSer
     const cancel = () => controller.abort(); reply.raw.once('close', cancel);
     const heartbeat = setInterval(() => send({ type: 'status', text: 'AI 正在处理，可以随时停止' }), 15000);
     try {
+      send({ type: 'status', text: '正在识别请求' });
+      const selectedIds = input.data.selectedIds.filter(id => doc.content.elements.some(element => element.id === id));
+      const decision = await classifyIntent({ mode: 'prototype', message: input.data.prompt, document: doc.content, selectedIds, dialogId: input.data.dialogId, history: past }, controller.signal, text => send({ type: 'status', text }), image);
+      const immediateReply = intentReply(decision.intent, 'prototype');
       const prompt = system + '\n\nproperties 对象的准确 JSON Schema（element 用于新增和修改元素，dialog 用于弹窗，page 用于页面；实际 properties 必须序列化为 JSON 字符串）：\n' + JSON.stringify(aiPropertySchemas) + '\n\n上下文JSON：\n' + JSON.stringify({ referenceImage: image ? { width: image.width, height: image.height } : undefined, page: { id: page.id, name: page.name }, selectedIds: input.data.selectedIds.filter(id => doc.content.elements.some(e => e.id === id)), dialogId: input.data.dialogId, document: { ...doc.content, importInfo: undefined }, history: past, message: input.data.prompt });
-      const { generated, value, result } = await generateValidated(doc.content, prompt, controller.signal, text => send({ type: 'status', text }), text => send({ type: 'text', text }), details => {
+      const { generated, value, result } = immediateReply ? {
+        generated: { provider: decision.provider }, value: { reply: immediateReply }, result: { document: doc.content, changed: false, changedIds: [] },
+      } : await generateValidated(doc.content, (decision.intent === 'question' ? '本轮意图为原型问答，只回答和解释，必须返回 operations=[]，不得修改原型。\n' : '') + prompt, controller.signal, text => send({ type: 'status', text }), text => send({ type: 'text', text }), details => {
         // Retain field paths and validation codes, never the prompt or raw model output.
         app.log.warn({ pageId, validation: details.map(({ path, code }) => ({ path, code })) }, 'AI result validation failed; retrying once');
         send({ type: 'text', text: '', reset: true });
-      }, undefined, undefined, image);
+      }, undefined, undefined, image, decision.intent === 'edit');
       if (controller.signal.aborted) throw Error('已停止，本轮没有修改原型。');
       if (auth && (!auth.checkLease(request, pageId) || !auth.can(request.identity!.user, page.projectId, 'prototype.edit'))) throw Error('页面编辑权或项目权限已变化，本轮没有应用。');
       const latest = db.select().from(documents).where(eq(documents.pageId, pageId)).get();

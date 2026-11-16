@@ -36,6 +36,36 @@ test('AI 支持新增组件和局部更新专属属性；无效属性、值和�
   assert.equal(source.elements[0].component!.title, getComponentDefinition('card')!.defaults.title);
 });
 
+test('页签状态颜色可由 AI 独立更新，保留默认选项和其他组件配置', () => {
+  const tabs = makeElement('tabs');
+  tabs.choices = { options: [{ id: 'normal', label: '正常使用账套' }, { id: 'disabled', label: '停用注销账套' }], defaultValues: ['normal'] };
+  const source = { width: 1000, height: 800, background: '#ffffff', elements: [tabs] };
+  const operation = (component: object) => ({ type: 'updateElement' as const, kind: '', targetId: tabs.id, properties: JSON.stringify({ component }) });
+  const result = applyAiResult(source, { reply: '选中蓝色，未选中黑色', operations: [operation({ selectedColor: '#1677ff', unselectedColor: '#000000', indicatorColor: '#1677ff' })] });
+  const updated = result.document.elements[0];
+  assert.equal(updated.component!.selectedColor, '#1677ff');
+  assert.equal(updated.component!.unselectedColor, '#000000');
+  assert.equal(updated.component!.type, tabs.component!.type);
+  assert.deepEqual(updated.choices, tabs.choices);
+  assert.deepEqual(documentSchema.parse(JSON.parse(JSON.stringify(result.document))), result.document);
+  assert.throws(() => applyAiResult(source, { reply: '非法颜色', operations: [operation({ selectedColor: 'blue' })] }));
+});
+
+test('树节点状态颜色可由 AI 更新并通过持久化校验，不改变节点与普通背景', () => {
+  const tree = makeElement('tree');
+  const source = { width: 1000, height: 800, background: '#ffffff', elements: [tree] };
+  const operation = (component: object) => ({ type: 'updateElement' as const, kind: '', targetId: tree.id, properties: JSON.stringify({ component }) });
+  const result = applyAiResult(source, { reply: '修改树选中背景', operations: [operation({ selectedBackground: '#cceeff', selectedColor: '#003366', hoverBackground: '#ffeecc' })] });
+  const updated = result.document.elements[0];
+  assert.equal(updated.component!.selectedBackground, '#cceeff');
+  assert.equal(updated.component!.selectedColor, '#003366');
+  assert.equal(updated.component!.hoverBackground, '#ffeecc');
+  assert.equal(updated.fill, tree.fill);
+  assert.deepEqual(updated.choices, tree.choices);
+  assert.deepEqual(documentSchema.parse(JSON.parse(JSON.stringify(result.document))), result.document);
+  assert.throws(() => applyAiResult(source, { reply: '非法颜色', operations: [operation({ selectedBackground: 'blue' })] }));
+});
+
 test('新增录入组件使用可序列化的模拟值，保留数字零、日期范围、布尔和多选', () => {
   const kinds = ['inputNumber', 'rangePicker', 'switch', 'checkboxSingle', 'transfer', 'treeSelect'] as const;
   const elements = kinds.map(kind => ({ ...makeElement(kind), id: kind }));

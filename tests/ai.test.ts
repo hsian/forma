@@ -50,6 +50,12 @@ test('独立子进程适配 Codex 和 Claude，只在明确额度耗尽时接续
     });
     assert.ok(Date.now() - beforeAuth < 5000, '登录失效应立即结束，不等待超时');
     assert.equal(authStatus.length, 1, '登录错误不切换到另一引擎');
+    const modelStatus: string[] = [];
+    await assert.rejects(generate(prompt('MODEL_UNAVAILABLE'), new AbortController().signal, text => modelStatus.push(text), () => {}), error => {
+      assert.match(friendlyError(error), /当前 AI 模型不存在或当前账号无权使用/);
+      return true;
+    });
+    assert.equal(modelStatus.length, 1, '模型配置错误不切换到另一引擎');
     const cancel = new AbortController(); const running = generate(prompt('停止测试'), cancel.signal, () => {}, () => {});
     setTimeout(() => cancel.abort(), 100);
     await assert.rejects(running, /cancelled/);

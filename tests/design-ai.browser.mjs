@@ -35,6 +35,8 @@ try{
   await page.locator('#design-ai-assistant-panel .ai-inline-notice').getByText(/水平间距 24px；填充 #ff0000/).waitFor();
   await button('展开设计稿 AI 对话').click();
   await page.getByRole('log',{name:'设计稿 AI 对话记录'}).getByText(/水平间距 24px；填充 #ff0000/).waitFor();
+  await input.fill('明天天气怎么样');await button('发送设计稿 AI 问题').click();
+  await page.getByRole('log',{name:'设计稿 AI 对话记录'}).getByText('我只能帮助编辑原型和分析设计稿。请描述要调整的页面、组件，或相关设计问题。',{exact:true}).waitFor();
   assert.deepEqual((await(await page.request.get(`${base}/api/pages/default-page/document`)).json()).document,original);
   assert.deepEqual((await(await page.request.get(`${base}/api/pages/default-page/design/${designId}`)).json()).document,source);
   await page.screenshot({path:'test-results/design-ai.png',animations:'disabled'});
