@@ -71,7 +71,7 @@ try {
   assert.equal(await reader.locator('.artboard').evaluate(el=>el.inert),true);
   assert.equal(await button(reader, '开始编辑').count(), 0); assert.equal(await button(reader, '新建页面').isDisabled(), true);
   assert.equal((await reader.request.post(`${base}/api/pages/default-page/ai/turn`, { data: {} })).status(), 403);
-  const previewOpen = reader.waitForEvent('popup'); await button(reader, '预览原型').click(); const preview = await previewOpen; await preview.locator('.preview-page').waitFor(); await preview.close();
+  const previewOpen = reader.waitForEvent('popup'); await button(reader, '预览').click(); const preview = await previewOpen; await preview.locator('.preview-page').waitFor(); await preview.close();
   await reader.screenshot({ path: 'test-results/auth-readonly.png', fullPage: true });
   await button(editor, '账号菜单').click(); await editor.getByRole('menuitem', { name: '退出登录', exact: true }).click(); await editor.getByRole('heading', { name: '登录 Forma', exact: true }).waitFor();
   await button(page, '页面').click(); await page.locator('.page-tree-title>span').getByText('用户管理', { exact: true }).click();

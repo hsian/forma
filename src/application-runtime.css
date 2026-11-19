@@ -1,0 +1,27 @@
+.canvas-mode-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 45px; min-height: 45px; padding: 6px 14px; background: white; border-bottom: 1px solid #e7e9f2; flex-shrink: 0; }
+.canvas-mode-toolbar > [role="group"] { display: flex; gap: 4px; padding: 2px; background: #f2f3f8; border-radius: 7px; }
+.canvas-mode-toolbar > [role="group"] > button { border: 0; border-radius: 5px; background: transparent; color: #67738c; padding: 5px 12px; font-size: 12px; white-space: nowrap; }
+.canvas-mode-toolbar button.active { color: #635bff; background: white; box-shadow: 0 1px 4px #26324d13; font-weight: 600; }
+.canvas-editor-surface { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.canvas-editor-surface[hidden] { display: none; }
+.application-runtime-preview { display: flex; flex-direction: column; flex: 1; min-height: 0; background: #f7f8fb; }
+.application-runtime-state { display: inline-flex; align-items: center; gap: 7px; }
+.canvas-ruler-actions .ant-btn[aria-pressed="true"] { color: #635bff; background: #eeedff; }
+.application-runtime-frame-wrap { position: relative; flex: 1; min-height: 0; }
+.application-runtime-frame-wrap iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.application-runtime-loading { position: absolute; inset: 0; display: grid; place-items: center; background: #ffffffd9; pointer-events: none; }
+.application-runtime-empty { flex: 1; min-height: 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
+.application-runtime-directory { max-width: 100%; overflow-wrap: anywhere; font-size: 12px; }
+.application-runtime-logs { display: flex; flex-direction: column; flex-shrink: 0; border-top: 1px solid #e6e9f1; background: #fff; }
+.application-runtime-logs.open { height: clamp(200px, 30vh, 360px); }
+.application-runtime-logs-heading { display: flex; align-items: center; justify-content: space-between; height: 36px; flex-shrink: 0; padding: 0 14px; }
+.application-runtime-logs-heading > button:first-child { border: 0; background: transparent; padding: 0; color: #697386; font-size: 12px; text-align: left; align-self: stretch; flex: 1; }
+.application-runtime-logs pre, .application-runtime-logs-expanded { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: 12px 14px; background: #202638; color: #e0e6f4; font: 12px/1.7 Consolas, monospace; tab-size: 2; }
+.application-runtime-logs pre { flex: 1; min-height: 0; }
+.application-runtime-logs-expanded { height: 65vh; border-radius: 6px; }
+.runtime-inspector > .panel-tabs, .runtime-inspector > .properties, .runtime-inspector > .inspector-footer { display: none; }
+.right-panel > .panel-tabs > button[hidden] { display: none; }
+.runtime-inspector-note { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; color: #697386; text-align: center; font-size: 12px; line-height: 1.9; }
+.runtime-inspector-note > .anticon { font-size: 30px; color: #8d85e8; }
+.runtime-inspector-note strong { font-size: 14px; color: #48556e; }
+.runtime-inspector-note p { margin: 0; }

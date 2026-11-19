@@ -50,7 +50,7 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
   }
   app.addHook('onRequest', async (request, reply) => {
     const path = request.url.split('?')[0];
-    if (!path.startsWith('/api/')) return;
+    if (!path.startsWith('/api/') && !path.startsWith('/__forma_runtime/')) return;
     if (isPublicMcpRead(request.method, path)) return;
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
       const origin = request.headers.origin;
@@ -70,7 +70,7 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
   // Recheck authorization after request bodies have been received, immediately before handlers.
   app.addHook('preHandler', async (request, reply) => {
     const path = request.url.split('?')[0];
-    if (!path.startsWith('/api/') || ['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup'].includes(path)) return;
+    if ((!path.startsWith('/api/') && !path.startsWith('/__forma_runtime/')) || ['/api/health', '/api/auth/status', '/api/auth/login', '/api/auth/setup'].includes(path)) return;
     if (isPublicMcpRead(request.method, path)) return;
     if (isPublicMcpTransport(request.method, path)) return;
     if (!request.identity || !db.select().from(sessions).where(and(eq(sessions.tokenHash, request.identity.sessionHash), gt(sessions.expiresAt, now()))).get()) return fail(reply, 401, '请先登录');
@@ -93,6 +93,7 @@ export function registerAuth(app: FastifyInstance, db: AppDatabase, now = Date.n
         const required = path.includes('/members') || path.includes('/roles') || path.endsWith('/owner') ? 'member.manage'
           : path.includes('/sketch') ? 'sketch.import'
           : path.includes('/versions') ? path.endsWith('/copy') ? 'version.copy' : request.method === 'DELETE' ? 'version.delete' : 'version.publish'
+          : path.includes('/application') || path.includes('/runtime/') ? 'project.update'
           : path === `/api/projects/${projectId}` ? request.method === 'DELETE' ? 'project.delete' : 'project.update'
           : path.endsWith('/document') || path.includes('/ai/') || path.endsWith('/lease') ? 'prototype.edit'
           : request.method === 'DELETE' ? 'page.delete' : 'page.manage';

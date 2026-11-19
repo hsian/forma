@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "architecture": "docs/architecture.md",
+  "integrationGuide": "docs/api-integrations.md",
+  "scenarios": "docs/scenarios.md",
+  "capabilities": [
+    { "id": "http.request", "file": "src/services/request.ts", "export": "request", "purpose": "统一请求、超时、取消和 HTTP 错误" },
+    { "id": "api.endpoint", "file": "src/services/endpoint.ts", "export": "defineEndpoint", "purpose": "每个接口独立映射请求与响应" },
+    { "id": "api.business-error", "file": "src/services/endpoint.ts", "export": "BusinessError", "purpose": "业务失败及响应校验失败" },
+    { "id": "api.mock", "file": "src/services/endpoint.ts", "export": "withMock", "purpose": "明确切换模拟实现，不因真实请求失败自动回退" },
+    { "id": "state.query", "file": "src/modules/shared/useQuery.ts", "export": "useQuery", "purpose": "查询状态、取消、重试和过期结果隔离" },
+    { "id": "state.mutation", "file": "src/modules/shared/useMutation.ts", "export": "useMutation", "purpose": "显式写操作、防重复提交、失败状态和取消" },
+    { "id": "ui.query-boundary", "file": "src/components/QueryBoundary.tsx", "export": "QueryBoundary", "purpose": "统一加载、错误重试和空态" },
+    { "id": "data.page-result", "file": "src/modules/shared/types.ts", "export": "PageResult", "purpose": "页面侧分页结果类型，不约束后端响应格式" }
+  ]
+}

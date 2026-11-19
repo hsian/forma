@@ -27,8 +27,18 @@ export const projects = sqliteTable('projects', {
   ownerId: text('owner_id').references(() => users.id),
   legacyAdminDelete: integer('legacy_admin_delete', { mode: 'boolean' }).notNull().default(false),
   name: text('name').notNull(),
+  application: text('application', { mode: 'json' }).$type<import('../../shared/application.js').ApplicationProject>(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
+});
+export const applicationSyncState = sqliteTable('application_sync_state', {
+  projectId: text('project_id').primaryKey().references(() => projects.id, { onDelete: 'cascade' }),
+  revision: integer('revision').notNull().default(1),
+  publishedRevision: integer('published_revision').notNull().default(0),
+  attemptedAt: integer('attempted_at'),
+  error: text('error'),
+  warning: text('warning'),
+  sourceFiles: text('source_files', { mode: 'json' }).$type<import('../../shared/application.js').GeneratedPageSource[]>().notNull().default(sql`'[]'`),
 });
 export const projectMembers = sqliteTable('project_members', {
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),

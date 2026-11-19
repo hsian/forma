@@ -1,0 +1,13 @@
+{
+  "name": "forma-business-application",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "check": "npm run check:architecture && tsc --noEmit",
+    "build": "npm run check && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  }
+}

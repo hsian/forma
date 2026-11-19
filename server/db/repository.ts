@@ -1,9 +1,9 @@
 import { createVersionRepository } from './versions.js';
 import { createDesignRepository } from './designs.js';
 import { createPersonalComponentRepository } from './personal-components.js';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { seedDocument, type PrototypeDocument } from '../../shared/model.js';
-import { projects, pages, documents } from './schema.js';
+import { projects, pages, documents, applicationSyncState } from './schema.js';
 import type { AppDatabase } from './index.js';
 
 export const defaultProjectId = 'default-project';
@@ -56,14 +56,48 @@ export function createRepository(db: AppDatabase) {
     }
     return ordered;
   }
-  function createProject(name: string) {
+  function createProject(name: string, application?: import('../../shared/application.js').ApplicationProject, prepare?: (result: { project: typeof projects.$inferSelect; page: typeof pages.$inferSelect }) => void) {
     return db.transaction(tx => {
       const now = Date.now();
-      const project = tx.insert(projects).values({ id: crypto.randomUUID(), name, createdAt: now, updatedAt: now }).returning().get()!;
+      const project = tx.insert(projects).values({ id: crypto.randomUUID(), name, application, createdAt: now, updatedAt: now }).returning().get()!;
       const page = tx.insert(pages).values({ id: crypto.randomUUID(), projectId: project.id, name: '首页', createdAt: now, updatedAt: now }).returning().get()!;
       tx.insert(documents).values({ pageId: page.id, content: { width: 1040, height: 720, background: '#f7f8fb', elements: [], dialogs: [] }, updatedAt: now }).run();
+      prepare?.({ project, page });
       return { project, page };
     });
+  }
+  function readProject(projectId: string) {
+    const project = db.select().from(projects).where(eq(projects.id, projectId)).get();
+    if (!project) throw new ManagementError('项目不存在', 404);
+    return project;
+  }
+  function applicationSnapshot(projectId: string) {
+    return db.transaction(() => ({ project: readProject(projectId), pages: listPages(projectId).map(page => ({ ...page, ...readDocument(page.id)! })), syncRevision: db.select().from(applicationSyncState).where(eq(applicationSyncState.projectId, projectId)).get()?.revision || 0 }));
+  }
+  function applicationSyncStatus(projectId: string): import('../../shared/application.js').ApplicationSyncStatus | null {
+    const row = db.select().from(applicationSyncState).where(eq(applicationSyncState.projectId, projectId)).get();
+    return row ? { ...row, state: row.error ? 'error' : row.revision > row.publishedRevision ? 'pending' : 'synced' } : null;
+  }
+  function pendingApplicationSyncs() {
+    return db.select().from(applicationSyncState).where(gt(applicationSyncState.revision, applicationSyncState.publishedRevision)).all();
+  }
+  function requestApplicationSync(projectId: string) {
+    if (!readProject(projectId).application) throw new ManagementError('此项目尚未关联业务工程', 409);
+    db.insert(applicationSyncState).values({ projectId }).onConflictDoUpdate({ target: applicationSyncState.projectId, set: { revision: sql`${applicationSyncState.revision} + 1` } }).run();
+  }
+  function finishApplicationSync(projectId: string, revision: number, syncedAt: number, sourceFiles: import('../../shared/application.js').GeneratedPageSource[], warning: string | null) {
+    db.transaction(() => {
+      markApplicationSynced(projectId, syncedAt);
+      db.update(applicationSyncState).set({ publishedRevision: revision, attemptedAt: syncedAt, sourceFiles, error: null, warning }).where(eq(applicationSyncState.projectId, projectId)).run();
+    });
+  }
+  function failApplicationSync(projectId: string, error: string) {
+    db.update(applicationSyncState).set({ error, attemptedAt: Date.now() }).where(eq(applicationSyncState.projectId, projectId)).run();
+  }
+  function markApplicationSynced(projectId: string, syncedAt: number) {
+    const project = db.select().from(projects).where(eq(projects.id, projectId)).get();
+    if (!project?.application) throw new ManagementError('此项目尚未关联业务工程', 409);
+    db.update(projects).set({ application: { ...project.application, syncedAt } }).where(eq(projects.id, projectId)).run();
   }
   function renameProject(id: string, name: string) {
     const project = db.update(projects).set({ name, updatedAt: Date.now() }).where(eq(projects.id, id)).returning().get();
@@ -174,5 +208,7 @@ export function createRepository(db: AppDatabase) {
   return {
     ...createPersonalComponentRepository(db), ...createVersionRepository(db), ...designs, initialize, bootstrap, readDocument, saveDocument, listProjects, listPages,
     createProject, renameProject, deleteProject, createPage, importPage, updatePage, duplicatePage, deletePage,
+    readProject, applicationSnapshot, markApplicationSynced,
+    applicationSyncStatus, pendingApplicationSyncs, requestApplicationSync, finishApplicationSync, failApplicationSync,
   };
 }

@@ -9,8 +9,19 @@ import { VersionError } from './db/versions.js';
 import { renderVersionHtml, versionHtmlFilename, versionSnapshot } from './version-export.js';
 import { registerPrototypeMcpReads } from './mcp/routes.js';
 import { registerPrototypeMcpHttp } from './mcp/http.js';
+import { createApplicationWorkspace } from './application-workspace.js';
+import { randomUUID } from 'node:crypto';
+import { realpathSync, statSync } from 'node:fs';
+import { pickNativeDirectory, type NativeDirectoryPicker } from './native-directory-picker.js';
+import { registerApplicationSync } from './application-sync.js';
+import { registerApplicationRuntime } from './application-runtime.js';
 
-export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService) {
+export function registerApi(app: FastifyInstance, repository: ReturnType<typeof createRepository>, auth?: AuthService, applicationOptions?: { rootDirectory?: string; pickDirectory?: NativeDirectoryPicker }) {
+  const workspace = createApplicationWorkspace(applicationOptions);
+  const applicationSync = registerApplicationSync(app, repository, workspace);
+  registerApplicationRuntime(app, repository, applicationSync, auth);
+  const selections = new Map<string, { directory: string; owner: string; expiresAt: number }>();
+  const selectionOwner = (request: import('fastify').FastifyRequest) => request.identity?.sessionHash || 'local';
   registerPrototypeMcpReads(app, repository);
   registerPrototypeMcpHttp(app, repository);
   registerSketchApi(app, repository, auth);
@@ -45,6 +56,10 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
     return { ...repository.bootstrap(page.id), projectRole: auth.role(user, page.projectId), permissions: auth.access(user, page.projectId)?.permissions || [], canCreateProject: user.role === 'admin' || !!user.canCreateProject };
   });
   app.get('/api/projects', async request => ({ projects: auth ? auth.allowedProjects(request.identity!.user).map(project => ({ ...project, projectRole: auth.role(request.identity!.user, project.id) })) : repository.listProjects() }));
+  app.get('/api/application-templates', async (request, reply) => {
+    if (auth && request.identity!.user.role !== 'admin' && !request.identity!.user.canCreateProject) return reply.code(403).send({ message: '此账号没有创建项目权限' });
+    return workspace.setup();
+  });
   app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/pages', async request => ({ pages: repository.listPages(request.params.projectId) }));
   const name = z.string().trim().min(1).max(120);
   const manage = <T>(operation: () => T, reply: import('fastify').FastifyReply) => {
@@ -53,11 +68,49 @@ export function registerApi(app: FastifyInstance, repository: ReturnType<typeof 
       throw error;
     }
   };
-  app.post('/api/projects', async (request, reply) => {
-    const parsed = z.object({ name }).safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ message: '请输入 1–120 字的项目名称' });
-    return manage(() => auth ? auth.createProject(() => repository.createProject(parsed.data.name), request.identity!.user) : repository.createProject(parsed.data.name), reply);
+  const canChooseDirectory = (request: import('fastify').FastifyRequest) => !auth || request.identity!.user.role === 'admin' || !!request.identity!.user.canCreateProject;
+  app.post('/api/application-directories/pick', async (request, reply) => {
+    if (!canChooseDirectory(request)) return reply.code(403).send({ message: '此账号没有创建项目权限' });
+    const address = request.ip;
+    const hostname = new URL(`http://${request.headers.host}`).hostname;
+    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address) || !['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return reply.code(400).send({ message: '请选择目录时，请在运行 Forma 的电脑上通过 localhost 打开。局域网浏览器无法调用你电脑的系统目录窗口。' });
+    const parsed = z.object({ initialDirectory: z.string().min(1).max(2000).optional() }).strict().safeParse(request.body || {});
+    if (!parsed.success) return reply.code(400).send({ message: '目录地址不正确' });
+    const controller = new AbortController();
+    const disconnected = () => { if (!reply.raw.writableEnded) controller.abort(); };
+    reply.raw.on('close', disconnected);
+    try {
+      const selected = await (applicationOptions?.pickDirectory || pickNativeDirectory)(parsed.data.initialDirectory || workspace.setup().rootDirectory, controller.signal);
+      if (selected === null) return { directory: null };
+      const directory = realpathSync(selected);
+      if (!statSync(directory).isDirectory()) throw new ManagementError('请选择有效的文件夹');
+      for (const [key, selection] of selections) if (selection.expiresAt <= Date.now()) selections.delete(key);
+      const directoryToken = randomUUID();
+      selections.set(directoryToken, { directory, owner: selectionOwner(request), expiresAt: Date.now() + 15 * 60000 });
+      return { directory, directoryToken };
+    } catch (error) {
+      return manage(() => { throw error instanceof ManagementError ? error : new ManagementError('未能读取系统所选目录，请重新选择', 503); }, reply);
+    } finally { reply.raw.off('close', disconnected); }
   });
+  app.post('/api/projects', async (request, reply) => {
+    const parsed = z.object({ name, application: z.object({ templateId: z.literal('admin'), directoryName: z.string().trim().min(1).max(64).optional(), parentDirectory: z.string().min(1).max(2000).optional(), directoryToken: z.string().uuid().optional() }).strict().optional() }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ message: '请检查项目名称、模板和工程目录名，项目名称需为 1–120 字' });
+    return manage(() => {
+      const own = <T extends { project: { id: string } }>(create: () => T) => auth ? auth.createProject(create, request.identity!.user) : create();
+      const application = parsed.data.application;
+      const selection = application?.directoryToken ? selections.get(application.directoryToken) : undefined;
+      if (application?.directoryToken && (!selection || selection.owner !== selectionOwner(request) || selection.expiresAt <= Date.now() || selection.directory !== application.parentDirectory)) throw new ManagementError('目录选择已失效，请重新点击「选择目录」');
+      // 兼容旧客户端的新建纯原型请求；新的 UI 始终指定模板。
+      const result = application ? workspace.create(application.templateId, application.directoryName, (metadata, initialize) => own(() => repository.createProject(parsed.data.name, metadata, result => initialize(repository.applicationSnapshot(result.project.id)))), application.parentDirectory, !!selection) : own(() => repository.createProject(parsed.data.name));
+      if (application?.directoryToken) selections.delete(application.directoryToken);
+      return result;
+    }, reply);
+  });
+  app.get<{ Params: { projectId: string } }>('/api/projects/:projectId/application', async (request, reply) => manage(() => ({ application: repository.readProject(request.params.projectId).application, sync: repository.applicationSyncStatus(request.params.projectId) }), reply));
+  app.post<{ Params: { projectId: string } }>('/api/projects/:projectId/application/sync', async (request, reply) => manage(() => {
+    repository.requestApplicationSync(request.params.projectId);
+    return applicationSync.syncProject(request.params.projectId);
+  }, reply));
   app.patch<{ Params: { projectId: string } }>('/api/projects/:projectId', async (request, reply) => {
     const parsed = z.object({ name }).safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ message: '项目名称不正确' });

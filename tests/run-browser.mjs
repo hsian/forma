@@ -5,18 +5,24 @@ import { createServer } from 'node:net';
 
 const scripts = process.argv.slice(2);
 const suites = scripts.length ? scripts : ['ai-conversations.browser.mjs', 'personal-components.browser.mjs', 'offline-version.browser.mjs', 'chat-images.browser.mjs', 'lan-http.browser.mjs', 'navigation.browser.mjs', 'management-page.browser.mjs', 'annotations.browser.mjs', 'permissions.browser.mjs', 'auth.browser.mjs', 'sketch-upload.browser.mjs', 'page-designs.browser.mjs', 'design-ai.browser.mjs', 'image-prototype.browser.mjs', 'image-table.browser.mjs', 'image-paste.browser.mjs', 'sketch-drawing.browser.mjs', 'versions.browser.mjs', 'browser.mjs', 'dialog.browser.mjs', 'select.browser.mjs', 'antd-components.browser.mjs', 'bank-connect.browser.mjs', 'persistence.browser.mjs', 'projects.browser.mjs', 'account-select.browser.mjs', 'pan.browser.mjs', 'project-preview.browser.mjs', 'ai.browser.mjs', 'row-actions.browser.mjs'];
-if (!scripts.length) suites.unshift('element-colors.browser.mjs');
+if (!scripts.length) suites.unshift('application-runtime.browser.mjs', 'application-projects.browser.mjs', 'element-colors.browser.mjs');
 await mkdir('test-results', { recursive: true });
 for (const suite of suites) {
   if (!/^[a-z.-]+\.mjs$/.test(suite)) throw Error('无效测试脚本名');
   const directory = await mkdtemp(resolve('test-results/browser-db-'));
+  // Vite deliberately ignores **/test-results/**, so live-update fixtures need a separate ignored root.
+  let applicationsDirectory = resolve(directory, 'applications');
+  if (suite === 'application-projects.browser.mjs' || suite === 'application-runtime.browser.mjs') {
+    await mkdir('test-applications', { recursive: true });
+    applicationsDirectory = resolve(await mkdtemp(resolve('test-applications/browser-')), 'applications');
+  }
   const probe = createServer();
   await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
-  const env = { ...process.env, PORT: String(port), DATABASE_PATH: resolve(directory, 'qa.db'), TEST_URL: `http://127.0.0.1:${port}` };
+  const env = { ...process.env, PORT: String(port), DATABASE_PATH: resolve(directory, 'qa.db'), FORMA_PROJECTS_ROOT: applicationsDirectory, TEST_URL: `http://127.0.0.1:${port}` };
   if (suite === 'chat-images.browser.mjs') Object.assign(env, { FORMA_AI_PROVIDER: 'codex', FORMA_CODEX_CLI: resolve('tests/fixtures/fake-chat-image-model.mjs') });
-  if (suite === 'ai-conversations.browser.mjs' || suite === 'ai.browser.mjs' || suite === 'design-ai.browser.mjs') Object.assign(env, { FORMA_AI_PROVIDER: 'codex', FORMA_CODEX_CLI: resolve('tests/fixtures/fake-model.mjs') });
+  if (suite === 'application-runtime.browser.mjs' || suite === 'application-projects.browser.mjs' || suite === 'ai-conversations.browser.mjs' || suite === 'ai.browser.mjs' || suite === 'design-ai.browser.mjs') Object.assign(env, { FORMA_AI_PROVIDER: 'codex', FORMA_CODEX_CLI: resolve('tests/fixtures/fake-model.mjs') });
   if (suite === 'image-prototype.browser.mjs') Object.assign(env, { FORMA_AI_PROVIDER: 'codex', FORMA_CODEX_CLI: resolve('tests/fixtures/fake-image-model.mjs') });
   const server = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts', '--production'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = '';

@@ -1,0 +1,49 @@
+.ant-input.application-project-input:not(:disabled) {
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 14px !important;
+  color: #273247;
+  background: #fff !important;
+  border-color: #a8b2c4 !important;
+}
+.ant-input.application-project-input:not(:disabled)::placeholder {
+  color: #697386;
+  opacity: 1;
+}
+.ant-input.application-project-input:not(:disabled):hover {
+  border-color: #817aff !important;
+}
+.ant-input.application-project-input:not(:disabled):focus {
+  border-color: #635bff !important;
+  box-shadow: 0 0 0 3px #635bff1a;
+}
+.application-template-grid { display: grid; gap: 16px; margin-top: 8px; }
+.application-template-card {
+  display: block; width: 100%; padding: 0; text-align: left;
+  background: #fff; border: 2px solid #dce1eb; border-radius: 12px;
+  overflow: hidden; cursor: pointer; transition: border-color .18s, box-shadow .18s;
+}
+.application-template-card:hover { border-color: #9b93ff; box-shadow: 0 4px 18px #635bff12; }
+.application-template-card.is-selected { border-color: #635bff; box-shadow: 0 0 0 3px #635bff0d; }
+.application-template-card:focus-visible { outline: 3px solid #b3adff; outline-offset: 3px; }
+.application-template-card > img { display: block; width: 100%; aspect-ratio: 1000/440; object-fit: contain; background: #eeedf9; }
+.application-template-caption { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; }
+.application-template-caption > span:first-child { display: flex; flex-direction: column; gap: 6px; }
+.application-template-caption strong { color: #273247; font-size: 16px; }
+.application-template-caption > span > span { color: #697386; font-size: 12px; line-height: 1.6; }
+.application-template-check { color: #635bff; font-size: 22px; flex-shrink: 0; }
+.application-directory-field { display: flex; gap: 10px; align-items: stretch; margin-top: 8px; }
+.application-directory-field > .ant-input { min-width: 0; cursor: pointer; }
+.application-directory-field > .ant-btn { height: auto; flex-shrink: 0; border-color: #a8b2c4; }
+.application-directory-help.ant-typography { margin: 8px 0 16px; font-size: 12px; line-height: 1.7; }
+.application-sync-indicator { display: flex; align-items: center; gap: 6px; padding: 0 12px 12px; border: 0; background: transparent; color: #349878 !important; font-size: 12px; text-align: left; }
+.application-sync-indicator.pending { color: #8b6bc4 !important; }
+.application-sync-indicator.error { color: #ce5959 !important; }
+.application-source-files { display: grid; gap: 10px; margin-top: 16px; padding: 12px; background: #f7f8fc; border: 1px solid #e6e9f1; border-radius: 8px; max-height: 220px; overflow: auto; }
+.application-source-files > div { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.application-source-files code { overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .application-template-caption { padding: 12px; }
+  .application-directory-field { flex-wrap: wrap; }
+  .application-directory-field > .ant-btn { min-height: 36px; }
+}

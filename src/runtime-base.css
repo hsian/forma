@@ -1,0 +1,15 @@
+/* 编辑器预览与独立业务工程共用的基础样式。 */
+.text-content{line-height:1.4;display:flex;align-items:center;white-space:pre-wrap}
+.member{display:flex;align-items:center;gap:9px;color:#51596e}
+.avatar{width:26px;height:26px;display:inline-grid;place-items:center;background:#eeeafb;color:#a49ac8;border-radius:50%;font-size:12px}
+.runtime-dialog-canvas{position:relative}
+.runtime-dialog-canvas .ant-form-item-row,.runtime-dialog-canvas .ant-form-item-control,.runtime-dialog-canvas .ant-form-item-control-input,.runtime-dialog-canvas .ant-form-item-control-input-content{height:100%}
+.runtime-dialog-canvas .ant-form-item-explain{font-size:12px}
+.prototype-checkbox{font-size:14px;display:flex;flex-direction:column;gap:14px;padding:4px}
+.prototype-checkbox>.ant-checkbox-group{display:flex;flex-wrap:wrap;gap:14px 24px}
+.prototype-checkbox .ant-checkbox-wrapper{font-size:inherit}
+.prototype-tree{display:flex;flex-direction:column;gap:14px;height:100%;font-size:14px}
+.prototype-tree .ant-tree{font-size:inherit;overflow:auto}
+.prototype-tabs .ant-tabs-tab{padding:12px 20px}
+.prototype-tabs .ant-tabs-nav{margin:0}
+.preview-page>[data-preview-id]:focus-within,.runtime-dialog-canvas>[data-preview-id]:focus-within{z-index:10}

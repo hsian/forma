@@ -9,6 +9,7 @@ import { SketchImport } from './SketchImport';
 import { ImagePrototype } from './ImagePrototype';
 import type { SketchBoard } from './SketchImport';
 import type { DocumentSession } from './useDocumentSession';
+import { ApplicationProjectFields, ApplicationProjectPanel, ApplicationSyncIndicator, type ApplicationCreation } from './ApplicationProject';
 
 async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
@@ -45,6 +46,9 @@ export function ProjectManagerProvider({ session, children, onBusyChange, onDesi
   const refreshGeneration = useRef(0);
   const [nameRequest, setNameRequest] = useState<NameRequest | null>(null);
   const [nameValue, setNameValue] = useState('');
+  const [applicationCreation, setApplicationCreation] = useState<ApplicationCreation>({ templateId: 'admin' });
+  const [applicationReady, setApplicationReady] = useState(false);
+  const [applicationOpen, setApplicationOpen] = useState(false);
   const [sketchOpen, setSketchOpen] = useState(false);
   const [sketchTarget, setSketchTarget] = useState('');
   const [designPageId, setDesignPageId] = useState<string | null>(null);
@@ -81,15 +85,17 @@ export function ProjectManagerProvider({ session, children, onBusyChange, onDesi
     finally { busyRef.current = false; setBusy(false); onBusyChange(false); }
   }
   async function openPage(id: string) { if (!await session.switchPage(id)) throw Error('页面未能切换，请先确认当前修改已经保存'); }
-  function requestName(request: NameRequest, value = '') { if (request.kind === 'new-project' ? !session.canCreateProject : !session.can(request.kind === 'rename-project' ? 'project.update' : 'page.manage')) return; setNameRequest(request); setNameValue(value); }
+  function requestName(request: NameRequest, value = '') { if (request.kind === 'new-project' ? !session.canCreateProject : !session.can(request.kind === 'rename-project' ? 'project.update' : 'page.manage')) return; setNameRequest(request); setNameValue(value); if (request.kind === 'new-project') { setApplicationCreation({ templateId: 'admin' }); setApplicationReady(false); } }
   async function submitName() {
     const value = nameValue.trim();
     if (!value || !nameRequest) { void message.warning('请输入名称'); return; }
+    if (nameRequest.kind === 'new-project' && !applicationReady) return;
     const request = nameRequest;
     const success = await run(async () => {
       if (request.kind === 'new-project') {
-        const created = await api<{ project: ProjectInfo; page: PageInfo }>('/api/projects', 'POST', { name: value });
+        const created = await api<{ project: ProjectInfo; page: PageInfo }>('/api/projects', 'POST', { name: value, application: applicationCreation });
         await openPage(created.page.id); await refresh(created.project.id);
+        void message.success('项目与业务工程已创建，可在「项目操作 → 业务工程」查看存放位置');
       } else if (request.kind === 'rename-project') {
         await api(`/api/projects/${encodeURIComponent(request.targetId!)}`, 'PATCH', { name: value });
         await refresh(); await session.refreshMetadata();
@@ -119,11 +125,12 @@ export function ProjectManagerProvider({ session, children, onBusyChange, onDesi
     });
   }
   function projectAction(key: string) {
+    if (key === 'application') setApplicationOpen(true);
     if (key === 'image' && session.can('page.manage') && session.can('prototype.edit')) setImageOpen(true);
     if (key === 'sketch' && session.can('sketch.import')) { setSketchTarget(''); setSketchOpen(true); }
     if (key === 'rename') requestName({ kind: 'rename-project', targetId: session.currentProjectId }, session.projectName);
     if (key === 'delete') modal.confirm({
-      title: `删除项目「${session.projectName}」？`, content: '项目内的所有页面、子页面和原型内容都会删除。', okText: '删除项目', cancelText: '取消', okButtonProps: { danger: true },
+      title: `删除项目「${session.projectName}」？`, content: '项目内的所有页面、子页面和原型内容都会删除。已生成的本地业务工程会保留。', okText: '删除项目', cancelText: '取消', okButtonProps: { danger: true },
       onOk: () => run(async () => {
         const result = await api<{ fallbackPageId: string }>(`/api/projects/${encodeURIComponent(session.currentProjectId)}`, 'DELETE');
         await openPage(result.fallbackPageId);
@@ -172,14 +179,19 @@ export function ProjectManagerProvider({ session, children, onBusyChange, onDesi
     refresh: () => { void run(() => refresh()); },
     designView, showDesign, showPrototype: () => setDesignPageId(null), uploadDesign,
   }}>{children}
+    {applicationOpen && <ApplicationProjectPanel key={session.currentProjectId} projectId={session.currentProjectId} canSync={session.can('project.update')} busy={busy} onCancel={() => setApplicationOpen(false)} onSync={() => run(async () => {
+      const result = await api<{ pageCount: number }>(`/api/projects/${encodeURIComponent(session.currentProjectId)}/application/sync`, 'POST');
+      await refresh(); void message.success(`已同步 ${result.pageCount} 个页面，开发者扩展已保留`);
+    })}/>}
     {sketchOpen && <SketchImport key={session.currentProjectId} projectId={session.currentProjectId} pages={pages} initialPageId={sketchTarget} busy={busy} onCancel={()=>setSketchOpen(false)} onImport={importSketch}/>}
     {imageOpen && <ImagePrototype key={session.currentProjectId} projectId={session.currentProjectId} busy={busy} onCancel={() => setImageOpen(false)} onImport={(name, document) => run(async () => {
       const result = await api<{ page: PageInfo }>(`/api/projects/${encodeURIComponent(session.currentProjectId)}/image-prototype/import`, 'POST', { name, document });
       setImageOpen(false); await refresh(); await openPage(result.page.id);
       void message.success(`已创建「${result.page.name}」，可继续编辑组件和配置交互`);
     })}/>}
-    <Modal open={!!nameRequest} title={nameRequest?.kind === 'new-project' ? '新建项目' : nameRequest?.kind === 'rename-project' ? '重命名项目' : nameRequest?.kind === 'new-page' ? nameRequest.parentId ? '新建子页面' : '新建页面' : '重命名页面'} okText="确定" cancelText="取消" confirmLoading={busy} onOk={() => { void submitName(); }} onCancel={() => { if (!busy) setNameRequest(null); }} destroyOnHidden>
-      <label className="stacked-label">{nameRequest?.kind.includes('project') ? '项目名称' : '页面名称'}<Input autoFocus aria-label="管理名称" maxLength={120} placeholder="输入名称" value={nameValue} onChange={event => setNameValue(event.target.value)} onPressEnter={() => { void submitName(); }}/></label>
+    <Modal open={!!nameRequest} width={nameRequest?.kind === 'new-project' ? 680 : 520} title={nameRequest?.kind === 'new-project' ? '新建项目' : nameRequest?.kind === 'rename-project' ? '重命名项目' : nameRequest?.kind === 'new-page' ? nameRequest.parentId ? '新建子页面' : '新建页面' : '重命名页面'} okText="确定" cancelText="取消" confirmLoading={busy} okButtonProps={{ disabled: nameRequest?.kind === 'new-project' && !applicationReady }} onOk={() => { void submitName(); }} onCancel={() => { if (!busy) setNameRequest(null); }} destroyOnHidden>
+      <label className="stacked-label">{nameRequest?.kind.includes('project') ? '项目名称' : '页面名称'}<Input className={nameRequest?.kind === 'new-project' ? 'application-project-input' : undefined} autoFocus aria-label="管理名称" maxLength={120} placeholder="输入名称" value={nameValue} onChange={event => setNameValue(event.target.value)} onPressEnter={() => { void submitName(); }}/></label>
+      {nameRequest?.kind === 'new-project' && <ApplicationProjectFields value={applicationCreation} onChange={setApplicationCreation} onReady={setApplicationReady}/>}
     </Modal>
     <Modal open={!!movePage} title={`移动页面「${movePage?.name || ''}」`} okText="移动" cancelText="取消" confirmLoading={busy} onCancel={() => { if (!busy) setMovePage(null); }} onOk={() => { if (!movePage) return; void run(async () => {
       await api(`/api/pages/${encodeURIComponent(movePage.id)}`, 'PATCH', { parentId: moveParent === '__root__' ? null : moveParent });
@@ -193,11 +205,11 @@ export function ProjectManagerProvider({ session, children, onBusyChange, onDesi
 function ProjectSwitcher() {
   const { projects, busy, session, selectProject, projectAction, name } = useManager();
   const disabled = busy || session.server !== 'ready';
-  return <div className="project-switcher"><Select aria-label="当前项目" variant="borderless" showSearch optionFilterProp="label" disabled={disabled} value={session.currentProjectId || undefined} placeholder={session.projectName}
+  return <><div className="project-switcher"><Select aria-label="当前项目" variant="borderless" showSearch optionFilterProp="label" disabled={disabled} value={session.currentProjectId || undefined} placeholder={session.projectName}
     options={projects.length ? projects.map(project => ({ value: project.id, label: project.name })) : session.currentProjectId ? [{ value: session.currentProjectId, label: session.projectName }] : []} onChange={selectProject}/>
-    <Dropdown trigger={['click']} menu={{ items: [{ key: 'rename', label: '重命名项目', disabled: !session.can('project.update') }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || !session.can('project.delete') }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
+    <Dropdown trigger={['click']} menu={{ items: [{ key: 'application', label: '业务工程' }, { key: 'rename', label: '重命名项目', disabled: !session.can('project.update') }, { key: 'delete', label: '删除项目', danger: true, disabled: projects.length < 2 || !session.can('project.delete') }], onClick: info => projectAction(info.key) }}><button aria-label="项目操作" title="项目操作" disabled={disabled}><MoreOutlined/></button></Dropdown>
     <button aria-label="新建项目" title="新建项目" disabled={disabled || !session.canCreateProject} onClick={() => name({ kind: 'new-project' })}><PlusOutlined/></button>
-  </div>;
+  </div><ApplicationSyncIndicator projectId={session.currentProjectId} onInspect={() => projectAction('application')}/></>;
 }
 
 export function PageTree() {

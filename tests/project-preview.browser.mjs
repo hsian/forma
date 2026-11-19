@@ -91,7 +91,7 @@ try {
   await editor.route(`**/api/pages/${child.id}/document`, route => route.request().method() === 'PUT' ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: '测试保存失败' }) }) : route.continue());
   await editor.getByRole('textbox', { name: '文字内容', exact: true }).fill('保存失败保留当前内容');
   const opened = editor.waitForEvent('popup');
-  await editor.getByRole('button', { name: '预览原型', exact: true }).click();
+  await editor.getByRole('button', { name: '预览', exact: true }).click();
   const failed = await opened;
   if (!failed.isClosed()) await failed.waitForEvent('close');
   await editor.getByText('当前修改尚未保存，请先处理保存失败或冲突后再预览', { exact: true }).waitFor();

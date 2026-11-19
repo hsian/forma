@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Alert, App, Button, Dropdown, Form, Input, Spin } from 'antd';
 import type { AuthUser, ProjectRole } from '../shared/auth';
 import './auth.css';
+import { ApplicationProjectFields, type ApplicationCreation } from './ApplicationProject';
 
 export async function authApi<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const response = await fetch(path, { method, ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
@@ -14,6 +15,8 @@ export function useAuth() { const value = useContext(Context); if (!value) throw
 export function AuthGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<{ setupRequired: boolean; user: AuthUser | null }>();
   const [hasProject, setHasProject] = useState(false);
+  const [applicationCreation, setApplicationCreation] = useState<ApplicationCreation>({ templateId: 'admin' });
+  const [applicationReady, setApplicationReady] = useState(false);
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   async function refresh() {
     const result = await authApi<{ setupRequired: boolean; user: AuthUser | null }>('/api/auth/status');
@@ -34,7 +37,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   async function logout() { await authApi('/api/auth/logout', 'POST'); setState({ setupRequired: false, user: null }); setHasProject(false); }
   if (state?.user && (hasProject || window.location.pathname === '/manage')) return <Context.Provider value={{ user: state.user, logout }}>{children}</Context.Provider>;
   return <main className="auth-screen"><section className="auth-card"><div className="auth-brand">forma</div>{!state ? <>{error ? <><Alert type="error" message={error}/><Button onClick={() => { void refresh().catch(error => setError(error.message)); }}>重新连接</Button></> : <Spin tip="正在连接"/>}</> : state.user ? <>
-    <h1>还没有可访问的项目</h1><p>{state.user.role === 'admin' || state.user.canCreateProject ? '你可以创建自己的项目，或请管理员添加项目权限。' : '请联系项目管理员添加项目访问权限。'}</p><Form disabled={state.user.role !== 'admin' && !state.user.canCreateProject} onFinish={async values => { setBusy(true); try { await authApi('/api/projects', 'POST', { name: values.name }); await refresh(); } catch (error) { setError((error as Error).message); } finally { setBusy(false); } }}><Form.Item name="name" rules={[{ required: true, message: '请输入项目名称' }]}><Input aria-label="项目名称" placeholder="项目名称" maxLength={120}/></Form.Item><Button block type="primary" htmlType="submit" loading={busy}>创建项目</Button></Form><Button onClick={() => { void refresh(); }}>刷新权限</Button><Button onClick={() => { void logout(); }}>退出登录</Button>
+    <h1>还没有可访问的项目</h1><p>{state.user.role === 'admin' || state.user.canCreateProject ? '你可以创建自己的项目，或请管理员添加项目权限。' : '请联系项目管理员添加项目访问权限。'}</p><Form disabled={state.user.role !== 'admin' && !state.user.canCreateProject} onFinish={async values => { if (!applicationReady) return; setBusy(true); try { await authApi('/api/projects', 'POST', { name: values.name, application: applicationCreation }); await refresh(); } catch (error) { setError((error as Error).message); } finally { setBusy(false); } }}><Form.Item name="name" rules={[{ required: true, message: '请输入项目名称' }]}><Input className="application-project-input" aria-label="项目名称" placeholder="项目名称" maxLength={120}/></Form.Item>{(state.user.role === 'admin' || state.user.canCreateProject) && <ApplicationProjectFields value={applicationCreation} onChange={setApplicationCreation} onReady={setApplicationReady}/>}<Button block type="primary" htmlType="submit" disabled={!applicationReady} loading={busy}>创建项目</Button></Form><Button onClick={() => { void refresh(); }}>刷新权限</Button><Button onClick={() => { void logout(); }}>退出登录</Button>
   </> : <>
     <h1>{state.setupRequired ? '创建管理员账号' : '登录 Forma'}</h1><p>{state.setupRequired ? '第一个账号自动成为管理员，并接管现有项目。后续账号由管理员创建。' : '登录后继续编辑和协作。'}</p>
     <Form layout="vertical" onFinish={submit} requiredMark={false}>

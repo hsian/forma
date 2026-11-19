@@ -10,6 +10,7 @@ import { componentConfig } from '../shared/antd-catalog';
 import { tableLayout } from '../shared/table-layout';
 import type { CSSProperties } from 'react';
 import './table-appearance.css';
+import './runtime-base.css';
 
 const members = [
   { key: '1', name: '林晓', email: 'lin.xiao@example.com', role: '管理员', status: '正常', date: '2026-10-20' },
